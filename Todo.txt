@@ -1,0 +1,14 @@
+1. More controls for user to set threshold for contour size to discriminate between dragons and aircraft
+2. Set up object tracking so that aircraft can be identified and followed
+    2a. Once this is done, remove keyframe & circles methodology
+3. add a settings menu:
+    set destination path
+    set video uploads folder
+
+4. test packaging into win app, try on Win10 machine.
+5. add further menu items
+    about
+    file... open, save, saveAs...
+
+
+
