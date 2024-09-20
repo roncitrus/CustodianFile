@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 from PyQt5.QtWidgets import QApplication
 
+
 from Result import ResultWindow
 from circle_drawer import CircleDrawer
 
@@ -10,11 +11,11 @@ from circle_drawer import CircleDrawer
 
 class VideoProcessor:
 
-    def __init__( self, video_path, threshold_value, preview_label, progress_bar = None, keyframe_indices = None, keyframe_positions = None):
+    def __init__( self, video_path, threshold_value, preview_label, progress_callback = None, keyframe_indices = None, keyframe_positions = None):
         self.video_path = video_path
         self.threshold_value = threshold_value
         self.preview_label = preview_label
-        self.progress_bar = progress_bar
+        self.progress_callback = progress_callback
         self.keyframe_indices = keyframe_indices if isinstance(keyframe_indices, (list, np.ndarray)) else []
         self.keyframe_positions = keyframe_positions if isinstance(keyframe_positions, list) and len(keyframe_positions) > 0 else []
         self.current_keyframe_index = 0
@@ -74,6 +75,9 @@ class VideoProcessor:
             circle_centers = [None] * frame_count
             circle_radii = [None] * frame_count
 
+        print(f"Initial action_seq.dtype: {action_seq.dtype}, action_seq.shape: {action_seq.shape}")
+        frame_height, frame_width, frame_channels = self.frames[0].shape
+        result_image = self.frames[0].copy()
         for i in range(frame_count):
             current_center = circle_centers[i]
             current_radius = circle_radii[i]
@@ -100,21 +104,22 @@ class VideoProcessor:
             contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             for contour in contours:
+                min_area = 5 # Assume min_size is 5
+                max_area = 35 # on the threshold of a dragon
                 area = cv2.contourArea(contour)
-                if area > 5:  # Assume min_size is 5
-                    mask = np.zeros_like(fg_mask)
+                if min_area < area < max_area:
+                    #single channel mask for contour
+                    mask = np.zeros((frame_height, frame_width, ), dtype=np.uint8)
                     cv2.drawContours(mask, [contour], -1, 255, -1)
-                    original_part = cv2.bitwise_and(self.frames[i], self.frames[i], mask=mask)
-                    mask_inv = cv2.bitwise_not(mask)
-                    action_seq = cv2.bitwise_and(action_seq, action_seq, mask=mask_inv)
-                    action_seq = cv2.add(action_seq, original_part)
+
+                    cv2.copyTo(self.frames[i], mask, result_image)
 
             # Update progress bar
-            if self.progress_bar:
+            if self.progress_callback:
                 progress_value = int((i + 1) / frame_count * 100)
-                self.progress_bar.emit(progress_value)
+                self.progress_callback.emit(progress_value)
 
-        return action_seq
+        return result_image
 
     def interpolate_circle_positions(self, keyframe_indices, keyframe_positions, total_frames):
         circle_centers = []

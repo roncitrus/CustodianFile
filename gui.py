@@ -1,14 +1,12 @@
 import os
 import sys
-
 import numpy as np
-
 from Result import ResultWindow
 from circle_drawer import CircleDrawer
 import cv2
 from PyQt5.QtGui import QPixmap, QIcon, QImage
 from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, \
-    QHBoxLayout, QTextEdit, QProgressBar, QCheckBox
+    QHBoxLayout, QTextEdit, QProgressBar, QCheckBox, QSizePolicy
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import video_processing
 from video_processing import VideoProcessor
@@ -27,13 +25,14 @@ class VideoProcessingThread(QThread):
         self.keyframe_indices = keyframe_indices
         self.keyframe_positions = keyframe_positions
 
+
     def run(self):
         # process video in a separate thread
         processor = VideoProcessor(
             video_path=self.video_path,
             threshold_value=self.threshold,
             preview_label=self.preview_label,
-            progress_bar=self.progress,  # Pass the progress signal here
+            progress_callback=self.progress,
             keyframe_indices=self.keyframe_indices,
             keyframe_positions=self.keyframe_positions)
         processor.load_video()
@@ -66,6 +65,7 @@ class CustodianApp(QMainWindow):
         self.confirm_button = None
         self.info_text_panel = None
         self.progress = None
+        self.final_video_label = None
 
         self.initUI()
 
@@ -99,23 +99,16 @@ class CustodianApp(QMainWindow):
         # Confirm button to confirm the drawn circle
         self.confirm_button = QPushButton('Confirm Circle', self)
         self.confirm_button.clicked.connect(self.confirm_circle)
-        layout.addWidget(self.confirm_button)
-
-        # Add video preview label
-        self.video_preview_label = QLabel(self)
-        layout.addWidget(self.video_preview_label)
-
-        # Confirm button to confirm the drawn circle
-        self.confirm_button = QPushButton('Confirm Circle', self)
-        self.confirm_button.clicked.connect(self.confirm_circle)
-        layout.addWidget(self.confirm_button)
         self.confirm_button.setFixedHeight(40)
+        layout.addWidget(self.confirm_button)
 
         # Calculate appropriate size maintaining the 16:9 aspect ratio
         max_width = 720
         aspect_ratio = 16 / 9
         preview_height = int(max_width / aspect_ratio)
 
+        # Add video preview label
+        self.video_preview_label = QLabel(self)
         self.video_preview_label.setMaximumSize(max_width, preview_height)
         self.video_preview_label.setMinimumSize(max_width, preview_height)
         self.video_preview_label.setScaledContents(True)
@@ -130,7 +123,6 @@ class CustodianApp(QMainWindow):
 
         #add slider for threshold control
         self.threshold_slider = QSlider(Qt.Horizontal, self)
-        self.threshold_slider.setGeometry(50, 100, 200, 30)
         self.threshold_slider.setMinimum(0)
         self.threshold_slider.setMaximum(100)
         self.threshold_slider.setValue(self.threshold_value)
@@ -153,11 +145,11 @@ class CustodianApp(QMainWindow):
         self.progress_bar = QProgressBar(self)
         layout.addWidget(self.progress_bar)
 
-        # Display label for final video
-        self.video_label = QLabel(self)
-        self.video_label.setMaximumSize(max_width, preview_height)  # Set the same size as the preview
-        self.video_label.setScaledContents(False)  # Ensure aspect ratio is preserved
-        layout.addWidget(self.video_label)
+        # Display label for final video - do I need this?
+        self.final_video_label = QLabel(self)
+        self.final_video_label.setMaximumSize(max_width, preview_height)  # Set the same size as the preview
+        self.final_video_label.setScaledContents(False)  # Ensure aspect ratio is preserved
+        layout.addWidget(self.final_video_label)
 
         self.show()
 
@@ -224,7 +216,7 @@ class CustodianApp(QMainWindow):
         try:
             # skip circle drawing
             if self.skip_circles_checkbox.isChecked():
-                print("Skipping circel drawing, proceeding to processing.")
+                print("Skipping circle drawing, proceeding to processing.")
                 self.start_processing_thread(self.video_path, self.threshold_value, self.keyframe_indices, [])
 
             if self.circle_drawer:
@@ -252,15 +244,6 @@ class CustodianApp(QMainWindow):
                     self.display_frame(next_frame_index) # move to next frame
                     self.circle_drawer.circle_confirmed = False
                 else:
-                    # # If all frames are done, start processing
-                    # self.keyframe_indices, self.keyframe_positions = self.circle_drawer.get_circle_positions(
-                    #     [self.frames[i] for i in self.keyframe_indices],
-                    #     num_keyframes=len(self.keyframe_indices))
-                    #
-                    # if not self.keyframe_positions or not len(self.keyframe_positions) == 0:
-                    #     self.append_text("Error: No keyframe indices or positions were generated.")
-                    #     return
-
                     self.append_text(f"Starting processing with keyframe_indices: {self.keyframe_indices}")
                     self.append_text(f"Starting processing with keyframe_positions: {self.keyframe_indices}")
                     self.start_processing_thread(self.video_path, self.threshold_value, self.keyframe_indices, self.keyframe_positions)

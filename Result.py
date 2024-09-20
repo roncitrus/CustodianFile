@@ -1,10 +1,10 @@
-import os.path
-from cProfile import label
-
-import cv2
-from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QFileDialog, QMenu
+import numpy as np
+from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QFileDialog, QMenu, QSizePolicy
 from PyQt5.QtGui import QPixmap, QImage
 from PyQt5.QtCore import Qt
+import cv2
+import os
+
 
 
 
@@ -18,67 +18,77 @@ class ResultWindow(QWidget):
         # Display the QImage in QLabel
         self.label = QLabel(self)
         self.label.setScaledContents(True)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.label.setAlignment(Qt.AlignCenter)
+
         self.init_ui()
 
 
     def init_ui(self):
-        # Convert the numpy array image from BGR to RGB
+        # get original image dimensions
+        print(f"self.image.dtype: {self.image.dtype}, shape: {self.image.shape}")
         image_rgb = cv2.cvtColor(self.image, cv2.COLOR_BGR2RGB)
-
-        # Convert the numpy array image to QPixmap
+        image_rgb = np.ascontiguousarray(image_rgb)
+        #image_rgb = self.image.copy()  # currently in BGR mode
         height, width, channel = image_rgb.shape
         bytes_per_line = 3 * width
         q_img = QImage(image_rgb.data, width, height, bytes_per_line, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(q_img)
 
-        if self.label is not None:
-            # Display the QImage in QLabel
-            self.label.setPixmap(pixmap)
-            self.label.setScaledContents(True)
+        # Adjust window size
+        self.adjust_window_size(width, height)
 
-            # set layout
-            layout = QVBoxLayout(self)
-            layout.addWidget(self.label)
-            self.setLayout(layout)
+        # set layout
+        layout = QVBoxLayout()
+        layout.addWidget(self.label)
+        self.setLayout(layout)
 
-            #Resize image
-            self.adjust_window_size(width, height)
-            self.center()
+        self.center()
 
-            # Enable context menu
-            self.label.setContextMenuPolicy(Qt.CustomContextMenu)
-            self.label.customContextMenuRequested.connect(self.show_context_menu)
-        else:
-            raise ValueError("Label is not initialized properly")
+        #Update the label:
+        self.label.setPixmap(pixmap)
+        self.label.setScaledContents(True)
+
+        # Enable context menu
+        self.label.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.label.customContextMenuRequested.connect(self.show_context_menu)
+
 
     def adjust_window_size(self, image_width, image_height):
         # Set the maximum window size based on screen resolution or other criteria
-        screen_geometry = self.screen().geometry()
+        screen_geometry = self.screen().availableGeometry()
         max_width = screen_geometry.width() * 0.8  # 80% of the screen width
         max_height = screen_geometry.height() * 0.8  # 80% of the screen height
 
+        #calculate aspect_ratio
+        aspect_ratio = image_width / image_height
+
         # Scale down if necessary
-        if image_width > max_width or image_height > max_height:
-            aspect_ratio = image_width / image_height
-            if image_width > max_width:
-                image_width = max_width
-                image_height = max_width / aspect_ratio
-            if image_height > max_height:
-                image_height = max_height
-                image_width = max_height * aspect_ratio
+        if image_width > max_width:
+            image_width = max_width
+            image_height = image_width / aspect_ratio
+        if image_height > max_height:
+            image_height = max_height
+            image_width = image_height * aspect_ratio
 
         # Convert dimensions to integers
         image_width = int(image_width)
         image_height = int(image_height)
 
-        # #resize image for display purposes
-        # resized_image = cv2.resize(self.image, (image_width, image_height), interpolation=cv2.INTER_AREA)
-        #
-        # #update QLabel and QPixmap with resized image
-        # bytes_per_line = 3 * image_width
-        # q_img = QImage(resized_image.data, image_width, image_height, bytes_per_line, QImage.Format_RGB888)
-        # pixmap = QPixmap.fromImage(q_img)
-        # self.label.setPixmap(pixmap)
+        #resize image for display purposes
+        resized_image = cv2.resize(self.image, (image_width, image_height), interpolation=cv2.INTER_AREA)
+
+        #convert the resized image to QPixmap
+        image_rgb = cv2.cvtColor(resized_image, cv2.COLOR_BGR2RGB)
+        bytes_per_line = 3 * image_width
+        q_img = QImage(resized_image.data, image_width, image_height, bytes_per_line, QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(q_img)
+
+
+        #update QLabel and QPixmap with resized image
+        self.label.setPixmap(pixmap)
+        self.label.adjustSize()
 
         # resize window to mathc image size
         self.resize(image_width, image_height)
