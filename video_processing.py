@@ -146,3 +146,4 @@ class VideoProcessor:
                 y1 < y2 + h2 and y1 + h1 > y2):
                 return True
         return False
+

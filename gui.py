@@ -4,9 +4,11 @@ import numpy as np
 from Result import ResultWindow
 from circle_drawer import CircleDrawer
 from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, \
+
     QHBoxLayout, QTextEdit, QProgressBar, QCheckBox
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt5.QtGui import QPixmap, QImage
+
 
 from video_processing import VideoProcessor
 import video_processing
@@ -23,12 +25,14 @@ class VideoProcessingThread(QThread):
         self.progress_bar = progress
         self.mode = mode
 
+
     def run(self):
         processor = VideoProcessor(
             video_path=self.video_path,
             threshold_value=self.threshold,
             preview_label=self.preview_label,
             progress_bar=self.progress.emit)
+
         processor.load_video()
 
         if self.mode == 'preprocess':
@@ -100,6 +104,8 @@ class CustodianApp(QMainWindow):
         aspect_ratio = 16 / 9
         preview_height = int(max_width / aspect_ratio)
 
+        # Add video preview label
+        self.video_preview_label = QLabel(self)
         self.video_preview_label.setMaximumSize(max_width, preview_height)
         self.video_preview_label.setMinimumSize(max_width, preview_height)
         self.video_preview_label.setScaledContents(True)
@@ -114,7 +120,6 @@ class CustodianApp(QMainWindow):
 
         #add slider for threshold control
         self.threshold_slider = QSlider(Qt.Horizontal, self)
-        self.threshold_slider.setGeometry(50, 100, 200, 30)
         self.threshold_slider.setMinimum(0)
         self.threshold_slider.setMaximum(100)
         self.threshold_slider.setValue(self.threshold_value)
@@ -137,11 +142,11 @@ class CustodianApp(QMainWindow):
         self.progress_bar = QProgressBar(self)
         layout.addWidget(self.progress_bar)
 
-        # Display label for final video
-        self.video_label = QLabel(self)
-        self.video_label.setMaximumSize(max_width, preview_height)  # Set the same size as the preview
-        self.video_label.setScaledContents(False)  # Ensure aspect ratio is preserved
-        layout.addWidget(self.video_label)
+        # Display label for final video - do I need this?
+        self.final_video_label = QLabel(self)
+        self.final_video_label.setMaximumSize(max_width, preview_height)  # Set the same size as the preview
+        self.final_video_label.setScaledContents(False)  # Ensure aspect ratio is preserved
+        layout.addWidget(self.final_video_label)
 
         self.show()
 
