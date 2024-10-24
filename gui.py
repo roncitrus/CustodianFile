@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from Result import ResultWindow
 from PyQt5.QtWidgets import QSizePolicy, QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar, QScrollArea, QCheckBox
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer
 from PyQt5.QtGui import QPixmap, QImage
 
 
@@ -15,13 +15,15 @@ class VideoProcessingThread(QThread):
     finished = pyqtSignal(np.ndarray)
     progress = pyqtSignal(int)
 
-    def __init__(self, video_path, threshold, preview_label, progress, mode='process'):
+    def __init__(self, video_path, threshold, preview_label, progress, mode='process', green_boxes=None, red_boxes=None):
         super().__init__()
         self.video_path = video_path
         self.threshold = threshold
         self.preview_label = preview_label
         self.progress_bar = progress
         self.mode = mode
+        self.green_boxes = green_boxes
+        self.red_boxes = red_boxes
 
 
     def run(self):
@@ -64,6 +66,9 @@ class CustodianApp(QMainWindow):
         self.progress = None
         self.preprocess_button = None
         self.process_button = None
+        self.slider_timer = QTimer(self)
+        self.slider_timer.setSingleShot(True)
+        self.slider_timer.timeout.connect(self.process_slider_change)
 
         self.initUI()
 
@@ -164,6 +169,10 @@ class CustodianApp(QMainWindow):
             self.result_window.close()
             self.result_window = None
 
+        if self.video_path is not None:
+            print("video is already loaded.")
+            return
+
         options = QFileDialog.Options()
         file_name, _ = QFileDialog.getOpenFileName(self, "Upload Video", "", "Video Files (*.mp4);;All Files (*)", options=options)
 
@@ -222,6 +231,11 @@ class CustodianApp(QMainWindow):
     def update_threshold(self, value):
         self.threshold_value = value
         self.threshold_label.setText(f'Threshold: {value}')
+        self.slider_timer.start(300)
+        if self.processor and self.frames:
+            self.preprocess_video()  # Rerun preprocessing with new threshold
+    
+    def process_slider_change(self):
         if self.processor and self.frames:
             self.preprocess_video()  # Rerun preprocessing with new threshold
 
@@ -247,9 +261,13 @@ class CustodianApp(QMainWindow):
         self.process_button.setEnabled(False)  # Disable process button
         self.start_processing_thread(self.video_path, self.threshold_value, mode='process')
 
-    def start_processing_thread(self, video_path, threshold_value, mode='process'):
+    def start_processing_thread(self, video_path, threshold_value, mode='process', green_boxes=None, red_boxes=None):
+        if self.thread and self.thread.isRunning():
+            self.thread.quit()
+            self.thread.wait()
+
         self.thread = VideoProcessingThread(
-            video_path, threshold_value, self.video_preview_label, self.progress_bar.setValue, mode)
+            video_path, threshold_value, self.video_preview_label, self.progress_bar.setValue, mode, green_boxes, red_boxes)
 
         self.thread.progress.connect(self.progress_bar.setValue)
         self.thread.finished.connect(self.on_processing_finished)

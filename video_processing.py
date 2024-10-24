@@ -35,35 +35,55 @@ class VideoProcessor:
         cap.release()
 
 
-    def process_with_squares(self):
+    def process_with_squares(self, green_boxes=None, red_boxes=None):
         frames = self.frames
         frame_count = len(frames)
         all_positions = []
-
+        
         for i in range(1, frame_count):
             frame = frames[i]
             prev_frame = frames[i-1]
 
             fast_positions, slow_positions = self.detect_fast_objects(frame, prev_frame, self.threshold_value)
+
+            #filter out positions that overlap with slow positions
+            filtered_positions = [pos for pos in fast_positions if not self.overlaps_with_slow(pos, slow_positions)]
+
+            #store the positions for the final image creation
+            all_positions.append((frame, filtered_positions))
+
+            fast_positions, slow_positions = self.detect_fast_objects(frame, prev_frame, self.threshold_value)
             
             # Filter out positions that overlap with slow positions
             filtered_positions = [pos for pos in fast_positions if not self.overlaps_with_slow(pos, slow_positions)]
-            
-            all_positions.append((frame, filtered_positions))
 
             if self.progress_bar:
                 progress = int((i + 1) / frame_count * 100)
                 self.progress_bar(progress)
 
-        return self.create_final_image(frames[0], all_positions)
+        #create the final image
+        return self.create_final_image(frames[0], all_positions, green_boxes, red_boxes)
 
-    def create_final_image(self, first_frame, all_positions):
+    def create_final_image(self, first_frame, all_positions, green_boxes=None, red_boxes=None):
         final_image = first_frame.copy()
 
+        # Copy regions from green boxes
+        if green_boxes:
+            for box in green_boxes:
+                x, y, w, h = box
+                region = first_frame[y:y+h, x:x+w]  # Extract the region from the first frame
+                final_image[y:y+h, x:x+w] = region  # Paste the region into the final image
+
+        # exclude regions from red boxes
+        if red_boxes:
+            for box in red_boxes:
+                x, y, w, h = box
+                final_image[y:y+h, x:x+w] = 0  # Set the region to black (or any other color to indicate exclusion
+
         for frame, positions in all_positions:
-            for(x, y, w, h) in positions:
-                object_region = frame[y:y+h, x:x+w] # clip the object region
-                #insert cropped object
+            for (x, y, w, h) in positions:
+                object_region = frame[y:y+h, x:x+w]  # Clip the object region
+                # Insert cropped object
                 final_image[y:y+h, x:x+w] = object_region
 
         return final_image
