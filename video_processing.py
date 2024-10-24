@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
 
 class VideoProcessor:
@@ -107,7 +108,12 @@ class VideoProcessor:
         bytes_per_line = 3 * width
         q_image = QImage(rgb_frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(q_image)
-        self.preview_label.setPixmap(pixmap)
+
+        # Scale the pixmap to fit the label size while maintaining aspect ratio
+        scaled_pixmap = pixmap.scaled(self.preview_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        print(f"Label size: {self.preview_label.size().width()}x{self.preview_label.size().height()}")
+
+        self.preview_label.setPixmap(scaled_pixmap)
         QApplication.processEvents()
 
     def preprocess_all_frames(self, threshold):
