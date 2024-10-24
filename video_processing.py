@@ -102,9 +102,10 @@ class VideoProcessor:
         return fast_positions, slow_positions
 
     def update_preview(self, frame):
-        height, width, channel = frame.shape
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        height, width, channel = rgb_frame.shape
         bytes_per_line = 3 * width
-        q_image = QImage(frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
+        q_image = QImage(rgb_frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(q_image)
         self.preview_label.setPixmap(pixmap)
         QApplication.processEvents()
@@ -129,15 +130,7 @@ class VideoProcessor:
         return self.create_preprocessed_image(all_fast_positions, all_slow_positions)
 
     def create_preprocessed_image(self, fast_positions, slow_positions):
-        result_image = self.frames[0].copy()
-
-        for (x, y, w, h) in fast_positions:
-            cv2.rectangle(result_image, (x, y), (x + w, y + h), (0, 255, 0), 2)
-
-        for (x, y, w, h) in slow_positions:
-            cv2.rectangle(result_image, (x, y), (x + w, y + h), (0, 0, 255), 2)
-
-        return result_image
+        return self.draw_object_rectangles(self.frames[0], fast_positions, slow_positions)
 
     def overlaps_with_slow(self, fast_pos, slow_positions):
         x1, y1, w1, h1 = fast_pos
@@ -146,4 +139,12 @@ class VideoProcessor:
                 y1 < y2 + h2 and y1 + h1 > y2):
                 return True
         return False
+    
+    def draw_object_rectangles(self, frame, fast_positions, slow_positions):
+        result_image = frame.copy()
+        for (x, y, w, h) in fast_positions:
+            cv2.rectangle(result_image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        for (x, y, w, h) in slow_positions:
+            cv2.rectangle(result_image, (x, y), (x + w, y + h), (0, 0, 255), 2)
+        return result_image
 
