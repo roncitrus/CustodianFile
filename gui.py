@@ -3,7 +3,7 @@ import sys
 import cv2
 import numpy as np
 from Result import ResultWindow
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar, QScrollArea, QCheckBox
+from PyQt5.QtWidgets import QSizePolicy, QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar, QScrollArea, QCheckBox
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt5.QtGui import QPixmap, QImage
 
@@ -41,6 +41,8 @@ class VideoProcessingThread(QThread):
         self.finished.emit(result_image)
 
 class CustodianApp(QMainWindow):
+    DEFAULT_PREVIEW_WIDTH = 720
+    DEFAULT_PREVIEW_HEIGHT = 405 # 16:9 aspect ratio
     def __init__(self):
         super().__init__()
         self.interpolate_button = None
@@ -98,24 +100,23 @@ class CustodianApp(QMainWindow):
         self.video_preview_label = QLabel(self)
         self.video_preview_label.setAlignment(Qt.AlignCenter)
         self.video_preview_label.setScaledContents(False)
+        self.video_preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         self.video_preview_scroll_area = QScrollArea(self)
         self.video_preview_scroll_area.setWidget(self.video_preview_label)
         self.video_preview_scroll_area.setWidgetResizable(True)
+        self.video_preview_scroll_area.setAlignment(Qt.AlignCenter)
+        
         layout.addWidget(self.video_preview_scroll_area)
 
         self.resizeEvent = self.onResize
 
-        # Calculate appropriate size maintaining the 16:9 aspect ratio
-        max_width = 720
-        aspect_ratio = 16 / 9
-        preview_height = int(max_width / aspect_ratio)
-
         # Add video preview label
         self.video_preview_label = QLabel(self)
-        self.video_preview_label.setMaximumSize(max_width, preview_height)
-        self.video_preview_label.setMinimumSize(max_width, preview_height)
+        self.video_preview_label.setMinimumSize(self.DEFAULT_PREVIEW_WIDTH, self.DEFAULT_PREVIEW_HEIGHT)
         self.video_preview_label.setScaledContents(True)
+        self.video_preview_label.setAlignment(Qt.AlignCenter)
+
         layout.addWidget(self.video_preview_label)
 
         # Horizontal layout for the slider and label
@@ -149,9 +150,9 @@ class CustodianApp(QMainWindow):
         self.progress_bar = QProgressBar(self)
         layout.addWidget(self.progress_bar)
 
-        # Display label for final video - do I need this?
+                # Display label for final video - do I need this?
         self.final_video_label = QLabel(self)
-        self.final_video_label.setMaximumSize(max_width, preview_height)  # Set the same size as the preview
+        self.final_video_label.setMinimumSize(self.DEFAULT_PREVIEW_WIDTH, self.DEFAULT_PREVIEW_HEIGHT)  # Set the same size as the preview
         self.final_video_label.setScaledContents(False)  # Ensure aspect ratio is preserved
         layout.addWidget(self.final_video_label)
 
@@ -174,6 +175,15 @@ class CustodianApp(QMainWindow):
             self.video_path = file_name
             self.processor = video_processing.VideoProcessor(self.video_path, self.threshold_value, self.video_preview_label, self.progress_bar.setValue)
             self.processor.load_video()
+
+            if self.processor.frames:
+                height, width = self.processor.frames[0].shape[:2]
+                aspect_ratio = width / height
+
+                preview_width = min(width, self.DEFAULT_PREVIEW_WIDTH)
+                preview_height = int(preview_width / aspect_ratio)
+
+                self.video_preview_label.setFixedSize(preview_width, preview_height)
 
             # display the filename
             self.setWindowTitle(f"Dragon Interpolation Generator - {base_name}")
@@ -202,7 +212,11 @@ class CustodianApp(QMainWindow):
             bytes_per_line = 3 * width
             q_image = QImage(rgb_frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
             pixmap = QPixmap.fromImage(q_image)
-            self.video_preview_label.setPixmap(pixmap)
+
+            scaled_pixmap = pixmap.scaled(self.video_preview_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            print(f"Label size: {self.video_preview_label.size().width()}x{self.video_preview_label.size().height()}")
+
+            self.video_preview_label.setPixmap(scaled_pixmap)
             self.updatePreviewSize()
 
     def update_threshold(self, value):
@@ -272,11 +286,26 @@ class CustodianApp(QMainWindow):
 
     def updatePreviewSize(self):
         if self.video_preview_label.pixmap():
-            available_width = self.video_preview_scroll_area.width() - 2
-            available_height = self.video_preview_scroll_area.height() - 2
+            available_size = self.video_preview_scroll_area.viewport().size()
             pixmap = self.video_preview_label.pixmap()
-            scaled_pixmap = pixmap.scaled(available_width, available_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled_pixmap = pixmap.scaled(available_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.video_preview_label.setPixmap(scaled_pixmap)
+            
+            # center the label if it's smaller than the available space
+            if scaled_pixmap.width() < available_size.width() or scaled_pixmap.height() < available_size.height():
+                self.video_preview_label.setAlignment(Qt.AlignCenter)
+            else:
+                self.video_preview_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+
+            # Scale the pixmap to fit the available size while maintaining aspect ratio
+
+            print(f"Scroll area size: {self.video_preview_scroll_area.size().width()}x{self.video_preview_scroll_area.size().height()}")
+            print(f"Scaled pixmap size: {scaled_pixmap.width()}x{scaled_pixmap.height()}")
+            print(f"Label size: {self.video_preview_label.size().width()}x{self.video_preview_label.size().height()}")
+            if self.video_preview_label.pixmap():
+                print(f"Pixmap size: {self.video_preview_label.pixmap().size().width()}x{self.video_preview_label.pixmap().size().height()}")
+            # Set the scaled pixmap to the label
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
