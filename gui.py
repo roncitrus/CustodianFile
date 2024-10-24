@@ -1,11 +1,9 @@
 import os
 import sys
+import cv2
 import numpy as np
 from Result import ResultWindow
-from circle_drawer import CircleDrawer
-from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, \
-
-    QHBoxLayout, QTextEdit, QProgressBar, QCheckBox
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar, QScrollArea, QCheckBox
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt5.QtGui import QPixmap, QImage
 
@@ -54,6 +52,7 @@ class CustodianApp(QMainWindow):
         self.current_frame_index = 0
         self.video_path = None
         self.video_preview_label = None
+        self.video_preview_scroll_area = None
         self.upload_button = None
         self.threshold_slider = None
         self.video_label = None
@@ -97,7 +96,15 @@ class CustodianApp(QMainWindow):
 
         # Add video preview label
         self.video_preview_label = QLabel(self)
-        layout.addWidget(self.video_preview_label)
+        self.video_preview_label.setAlignment(Qt.AlignCenter)
+        self.video_preview_label.setScaledContents(False)
+        
+        self.video_preview_scroll_area = QScrollArea(self)
+        self.video_preview_scroll_area.setWidget(self.video_preview_label)
+        self.video_preview_scroll_area.setWidgetResizable(True)
+        layout.addWidget(self.video_preview_scroll_area)
+
+        self.resizeEvent = self.onResize
 
         # Calculate appropriate size maintaining the 16:9 aspect ratio
         max_width = 720
@@ -173,23 +180,30 @@ class CustodianApp(QMainWindow):
             self.frames = self.processor.frames
             self.current_frame_index = 0
 
+            self.display_frame(0)
+
             # Automatically start preprocessing
             self.preprocess_video()
 
 
     def display_frame(self, frame_index):
-        if not self.video_preview_label:
-            raise ValueError("Video_preview_label is not initialised")
+        if self.processor and self.frames:
+            frame = self.frames[frame_index]
+            if frame_index > 0:
+                prev_frame = self.frames[frame_index - 1]
+                fast_positions, slow_positions = self.processor.detect_fast_objects(frame, prev_frame, self.threshold_value)
+                display_frame = self.processor.draw_object_rectangles(frame, fast_positions, slow_positions)
+            else:
+                display_frame = frame
 
-        if not self.processor or frame_index >= len(self.processor.frames):
-            raise ValueError("Invalid frame indexor video not loaded")
-
-        frame = self.processor.frames[frame_index]
-
-
-        if frame_index > 0:
-            prev_frame = self.processor.detect_fast_objects(frame, prev_frame)
-
+            # Convert BGR to RGB
+            rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
+            height, width, channel = rgb_frame.shape
+            bytes_per_line = 3 * width
+            q_image = QImage(rgb_frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(q_image)
+            self.video_preview_label.setPixmap(pixmap)
+            self.updatePreviewSize()
 
     def update_threshold(self, value):
         self.threshold_value = value
@@ -251,6 +265,18 @@ class CustodianApp(QMainWindow):
         self.preprocess_button.setEnabled(False)  # Disable preprocess button
         self.process_button.setEnabled(False)  # Disable process button
         self.start_processing_thread(self.video_path, self.threshold_value, mode='preprocess')
+
+    def onResize(self, event):
+        if self.video_preview_label.pixmap():
+            self.updatePreviewSize()
+
+    def updatePreviewSize(self):
+        if self.video_preview_label.pixmap():
+            available_width = self.video_preview_scroll_area.width() - 2
+            available_height = self.video_preview_scroll_area.height() - 2
+            pixmap = self.video_preview_label.pixmap()
+            scaled_pixmap = pixmap.scaled(available_width, available_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.video_preview_label.setPixmap(scaled_pixmap)
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
