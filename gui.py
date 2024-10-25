@@ -232,8 +232,6 @@ class CustodianApp(QMainWindow):
         self.threshold_value = value
         self.threshold_label.setText(f'Threshold: {value}')
         self.slider_timer.start(300)
-        if self.processor and self.frames:
-            self.preprocess_video()  # Rerun preprocessing with new threshold
     
     def process_slider_change(self):
         if self.processor and self.frames:
