@@ -2,57 +2,48 @@ import os
 import sys
 import cv2
 import numpy as np
+from sympy import preview
+from torch.ao.nn.quantized.functional import threshold
+
 from Result import ResultWindow
 from PyQt5.QtWidgets import QSizePolicy, QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar, QScrollArea, QCheckBox
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer
 from PyQt5.QtGui import QPixmap, QImage
-
-
 from video_processing import VideoProcessor
 import video_processing
 
 class VideoProcessingThread(QThread):
-    finished = pyqtSignal(np.ndarray)
+    finished = pyqtSignal(object)
     progress = pyqtSignal(int)
 
-    def __init__(self, video_path, threshold, preview_label, progress, mode='process', green_boxes=None, red_boxes=None):
+    def __init__(self, processor, mode='process', green_boxes=None, red_boxes=None):
         super().__init__()
-        self.video_path = video_path
+        self.processor = processor
         self.threshold = threshold
-        self.preview_label = preview_label
-        self.progress_bar = progress
         self.mode = mode
         self.green_boxes = green_boxes
         self.red_boxes = red_boxes
 
-
     def run(self):
-        processor = VideoProcessor(
-            video_path=self.video_path,
-            threshold_value=self.threshold,
-            preview_label=self.preview_label,
-            progress_bar=self.progress.emit)
-
-        processor.load_video()
-
         if self.mode == 'preprocess':
-            result_image = processor.preprocess_all_frames(self.threshold)
+            result_image = self.processor.preprocess_all_frames()
         else:
-            result_image = processor.process_with_squares()
+            self.processor.preprocess_all_frames()
+            result_image = self.processor.process_with_squares(self.green_boxes, self.red_boxes)
 
         self.finished.emit(result_image)
 
 class CustodianApp(QMainWindow):
     DEFAULT_PREVIEW_WIDTH = 720
-    DEFAULT_PREVIEW_HEIGHT = 405 # 16:9 aspect ratio
+    DEFAULT_PREVIEW_HEIGHT = 405  # 16:9 aspect ratio
     def __init__(self):
         super().__init__()
+        self.threshold_value = 50
         self.interpolate_button = None
         self.progress_bar = None
         self.result_window = None
-        self.threshold_value = 5
+        self.processor = video_processing.VideoProcessor(None, self.threshold_value, None, None)
         self.frames = []
-        self.processor = None
         self.current_frame_index = 0
         self.video_path = None
         self.video_preview_label = None
@@ -75,61 +66,52 @@ class CustodianApp(QMainWindow):
     def initUI(self):
         self.setWindowTitle('Dragon Interpolation Generator')
         self.setGeometry(100, 100, 1280, 720)
-
         # Central widget to hold all other widgets
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
+        #central_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        layout = QVBoxLayout(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        preview_layout = QHBoxLayout()
+        button_layout = QVBoxLayout()
+        layout2 = QVBoxLayout()
 
         # upload button
         self.upload_button = QPushButton('Upload Video', self)
         self.upload_button.clicked.connect(self.upload_video)
-        layout.addWidget(self.upload_button)
+        button_layout.addWidget(self.upload_button)
         self.upload_button.setFixedHeight(40)
 
         # Preprocess button
         self.preprocess_button = QPushButton('Preprocess', self)
         self.preprocess_button.clicked.connect(self.preprocess_video)
-        layout.addWidget(self.preprocess_button)
+        button_layout.addWidget(self.preprocess_button)
         self.preprocess_button.setFixedHeight(40)
 
         # Process button
         self.process_button = QPushButton('Process', self)
         self.process_button.clicked.connect(self.start_processing)
-        layout.addWidget(self.process_button)
+        button_layout.addWidget(self.process_button)
         self.process_button.setFixedHeight(40)
         self.process_button.setEnabled(False)  # Disable initially
 
+        main_layout.addLayout(button_layout)
+
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        main_layout.addWidget(spacer)
+
         # Add video preview label
         self.video_preview_label = QLabel(self)
+        self.video_preview_label.setFixedSize(self.DEFAULT_PREVIEW_WIDTH, self.DEFAULT_PREVIEW_HEIGHT)
         self.video_preview_label.setAlignment(Qt.AlignCenter)
         self.video_preview_label.setScaledContents(False)
-        self.video_preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        
-        self.video_preview_scroll_area = QScrollArea(self)
-        self.video_preview_scroll_area.setWidget(self.video_preview_label)
-        self.video_preview_scroll_area.setWidgetResizable(True)
-        self.video_preview_scroll_area.setAlignment(Qt.AlignCenter)
-        
-        layout.addWidget(self.video_preview_scroll_area)
+        preview_layout.addWidget(self.video_preview_label)
+        main_layout.addLayout(preview_layout)
 
-        self.resizeEvent = self.onResize
-
-        # Add video preview label
-        self.video_preview_label = QLabel(self)
-        self.video_preview_label.setMinimumSize(self.DEFAULT_PREVIEW_WIDTH, self.DEFAULT_PREVIEW_HEIGHT)
-        self.video_preview_label.setScaledContents(True)
-        self.video_preview_label.setAlignment(Qt.AlignCenter)
-
-        layout.addWidget(self.video_preview_label)
-
-        # Horizontal layout for the slider and label
-        slider_layout = QHBoxLayout()
         # Add threshold label
         self.threshold_label = QLabel(f'Threshold: {self.threshold_value}', self)
-        slider_layout.addWidget(self.threshold_label)
-        slider_layout.setContentsMargins(10, 10, 10, 10)
+        layout2.addWidget(self.threshold_label)
 
         #add slider for threshold control
         self.threshold_slider = QSlider(Qt.Horizontal, self)
@@ -137,190 +119,210 @@ class CustodianApp(QMainWindow):
         self.threshold_slider.setMaximum(100)
         self.threshold_slider.setValue(self.threshold_value)
         self.threshold_slider.valueChanged.connect(self.update_threshold)
-        slider_layout.addWidget(self.threshold_slider)
-        layout.addLayout(slider_layout)
+        layout2.addWidget(self.threshold_slider)
+
+        #add slider for minimum  speed control
+        self.min_speed_label = QLabel(f'Min Speed: {self.processor.min_speed}', self)
+        layout2.addWidget(self.min_speed_label)
+        self.min_speed_slider = QSlider(Qt.Horizontal, self)
+        self.min_speed_slider.setMinimum(0)
+        self.min_speed_slider.setMaximum(1000)
+        self.min_speed_slider.setValue(self.processor.min_speed)
+        self.min_speed_slider.valueChanged.connect(self.update_min_speed)
+        layout2.addWidget(self.min_speed_slider)
+
+        # add slider for maximum size control
+        self.max_size_label = QLabel(f'Max Size: {self.processor.max_size}', self)
+        layout2.addWidget(self.max_size_label)
+        self.max_size_slider = QSlider(Qt.Horizontal, self)
+        self.max_size_slider.setMinimum(0)
+        self.max_size_slider.setMaximum(5000)
+        self.max_size_slider.setValue(self.processor.max_size)
+        self.max_size_slider.valueChanged.connect(self.update_max_size)
+        layout2.addWidget(self.max_size_slider)
 
         #display label for video
         self.video_label = QLabel(self)
         self.video_label.setMaximumSize(1280, 720)  # Set a maximum size
         self.video_label.setScaledContents(True)  # Scale the image to fit the label
-        layout.addWidget(self.video_label)
+        layout2.addWidget(self.video_label)
 
         # Add info text panel to display print statements
         self.info_text_panel = QTextEdit(self)
         self.info_text_panel.setReadOnly(True)  # Make it read-only
-        layout.addWidget(self.info_text_panel)
+        layout2.addWidget(self.info_text_panel)
 
         # Progress bar for processing
         self.progress_bar = QProgressBar(self)
-        layout.addWidget(self.progress_bar)
+        layout2.addWidget(self.progress_bar)
 
-                # Display label for final video - do I need this?
+        # Display label for final video - do I need this?
         self.final_video_label = QLabel(self)
-        self.final_video_label.setMinimumSize(self.DEFAULT_PREVIEW_WIDTH, self.DEFAULT_PREVIEW_HEIGHT)  # Set the same size as the preview
         self.final_video_label.setScaledContents(False)  # Ensure aspect ratio is preserved
-        layout.addWidget(self.final_video_label)
+        layout2.addWidget(self.final_video_label)
+
+        main_layout.addLayout(layout2)
 
         self.show()
-
 
     def upload_video(self):
         if hasattr(self, 'result_window') and self.result_window is not None:
             self.result_window.close()
             self.result_window = None
 
-        if self.video_path is not None:
-            print("video is already loaded.")
-            return
-
         options = QFileDialog.Options()
         file_name, _ = QFileDialog.getOpenFileName(self, "Upload Video", "", "Video Files (*.mp4);;All Files (*)", options=options)
 
-        if file_name:
-            self.video_path = file_name
-            print(f"Selected video path: {file_name}")
-            base_name = os.path.basename(file_name)
-            print(f"selected filename = {base_name}")
-            self.video_path = file_name
-            self.processor = video_processing.VideoProcessor(self.video_path, self.threshold_value, self.video_preview_label, self.progress_bar.setValue)
+        if not file_name:
+            return
+
+        # Check if the same video is already loaded
+        if self.video_path == file_name:
+            self.append_text("Video is already loaded.")
+            return
+
+        self.video_path = file_name
+        print(f"Selected video path: {file_name}")
+        base_name = os.path.basename(file_name)
+
+        self.setWindowTitle(f"Dragon Interpolation Generator - {base_name}")
+        self.append_text(f"selected filename = {base_name}")
+
+        try:
+            self.processor = video_processing.VideoProcessor(self.video_path, self.threshold_value, self.video_preview_label)
             self.processor.load_video()
-
-            if self.processor.frames:
-                height, width = self.processor.frames[0].shape[:2]
-                aspect_ratio = width / height
-
-                preview_width = min(width, self.DEFAULT_PREVIEW_WIDTH)
-                preview_height = int(preview_width / aspect_ratio)
-
-                self.video_preview_label.setFixedSize(preview_width, preview_height)
+            self.frames = self.processor.frames
+            if self.frames:
+                self.current_frame_index = 0
+                self.display_frame(0)
+                self.append_text("Video loaded successfully.")
+                self.preprocess_button.setEnabled(True)  # Enable preprocess button
+                self.preprocess_video()
+            else:
+                self.append_text("Failed to load frames. Please select a different video.")
+                self.video_path = None
+                self.processor = None
+        except Exception as e:
+            if self.frames:
+                self.append_text(f"Error loading video: {str(e)}")
+                self.video_path = None
+                self.processor = None
 
             # display the filename
-            self.setWindowTitle(f"Dragon Interpolation Generator - {base_name}")
-            self.frames = self.processor.frames
-            self.current_frame_index = 0
 
-            self.display_frame(0)
+            self.frames = self.processor.frames
 
             # Automatically start preprocessing
             self.preprocess_video()
 
-
-    def display_frame(self, frame_index):
-        if self.processor and self.frames:
-            frame = self.frames[frame_index]
-            if frame_index > 0:
-                prev_frame = self.frames[frame_index - 1]
-                fast_positions, slow_positions = self.processor.detect_fast_objects(frame, prev_frame, self.threshold_value)
-                display_frame = self.processor.draw_object_rectangles(frame, fast_positions, slow_positions)
-            else:
-                display_frame = frame
-
-            # Convert BGR to RGB
-            rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
+    def display_frame(self, frame_index, rgb_frame=None):
+        if rgb_frame is None:
+            if 0 <= frame_index < len(self.frames):
+                rgb_frame = cv2.cvtColor(self.frames[frame_index], cv2.COLOR_BGR2RGB)
+        elif rgb_frame is not None:
+            if 0 <= frame_index < len(self.frames):
+                rgb_frame = cv2.cvtColor(self.frames[frame_index], cv2.COLOR_BGR2RGB)
             height, width, channel = rgb_frame.shape
-            bytes_per_line = 3 * width
+            bytes_per_line = channel * width
             q_image = QImage(rgb_frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
-            pixmap = QPixmap.fromImage(q_image)
-
-            scaled_pixmap = pixmap.scaled(self.video_preview_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            print(f"Label size: {self.video_preview_label.size().width()}x{self.video_preview_label.size().height()}")
-
-            self.video_preview_label.setPixmap(scaled_pixmap)
-            self.updatePreviewSize()
+            pixmap = QPixmap.fromImage(q_image).scaled(self.video_preview_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.video_preview_label.setPixmap(pixmap)
+            self.video_preview_label.update()
 
     def update_threshold(self, value):
         self.threshold_value = value
         self.threshold_label.setText(f'Threshold: {value}')
+        self.processor.threshold_value = value
+        self.processor.create_background_subtractor()
+        self.display_frame(self.current_frame_index)
         self.slider_timer.start(300)
-    
+
+    def update_min_speed(self, value):
+        if self.processor:
+            self.processor.min_speed = value
+            self.min_speed_label.setText(f'Min Speed: {value}')
+            self.display_frame(self.current_frame_index)
+            self.slider_timer.start(300)
+
+    def update_max_size(self, value):
+        if self.processor:
+            self.processor.max_size = value
+            self.max_size_label.setText(f'Max Size: {value}')
+            self.display_frame(self.current_frame_index)
+            self.slider_timer.start(300)
+
     def process_slider_change(self):
+        print("slider changed - preprocess_video called")
         if self.processor and self.frames:
+            self.processor.prev_fast_positions = []
             self.preprocess_video()  # Rerun preprocessing with new threshold
+        else:
+            print("Processor or frames not initialized. Please upload a video.")
 
     def append_text(self, text):
         self.info_text_panel.append(text)
         self.info_text_panel.ensureCursorVisible()  # Scrolls to the latest line
 
-    def toggle_interpolation_button(self, state):
-        if state == Qt.Checked:
-            self.confirm_button.setVisible(False)
-            self.interpolate_button.setVisible(True)
-        else:
-            self.confirm_button.setVisible(True)
-            self.interpolate_button.setVisible(False)
-            
+
     def start_processing(self):
-        if not self.processor or not self.frames:
+        if not self.processor or not self.processor.frames:
             self.append_text("Please preprocess the video first.")
             return
 
         self.append_text("Processing video...")
         self.preprocess_button.setEnabled(False)  # Disable preprocess button
         self.process_button.setEnabled(False)  # Disable process button
-        self.start_processing_thread(self.video_path, self.threshold_value, mode='process')
+        self.start_processing_thread(mode='process')
 
-    def start_processing_thread(self, video_path, threshold_value, mode='process', green_boxes=None, red_boxes=None):
-        if self.thread and self.thread.isRunning():
-            self.thread.quit()
-            self.thread.wait()
 
+    def start_processing_thread(self, mode='process', green_boxes=None, red_boxes=None):
+        if self.thread is not None and self.thread.isRunning():
+            print("Previous process still running...")
+            return
+        print(f"Starting {mode} thread...")
         self.thread = VideoProcessingThread(
-            video_path, threshold_value, self.video_preview_label, self.progress_bar.setValue, mode, green_boxes, red_boxes)
-
+            self.processor, mode, green_boxes, red_boxes)  # pass in self.processor here
+        self.processor.progress_bar = self.thread.progress
         self.thread.progress.connect(self.progress_bar.setValue)
         self.thread.finished.connect(self.on_processing_finished)
         self.thread.start()
 
-    def on_processing_finished(self, result_image):
+    def on_processing_finished(self, result_images):
         if self.thread.mode == 'preprocess':
-            self.processor.update_preview(result_image)
+            print("Preprocessing finished successfully.")
+            self.frames = result_images
+            self.display_frame(self.current_frame_index)
+
             self.append_text("Preprocessing complete. You can now adjust the threshold if needed.")
             self.append_text("Click 'Process' when ready to generate the final image.")
             self.process_button.setEnabled(True)
+            print(f"Process button enabled: {self.process_button.isEnabled()}")
             self.preprocess_button.setEnabled(True)  # Re-enable preprocess button
         else:
+            print("Processing final image.")
             if hasattr(self, 'result_window') and self.result_window is not None:
                 self.result_window.close()
+            result_image = result_images[0]
             self.result_window = ResultWindow(image=result_image, video_path=self.video_path)
             self.result_window.show()
             self.process_button.setEnabled(True)  # Re-enable process button
             self.preprocess_button.setEnabled(True)  # Re-enable preprocess button
 
     def preprocess_video(self):
-        if not self.processor or not self.frames:
+        if not self.processor:
             self.append_text("Please upload a video first.")
+            return
+        if not self.frames:
+            self.append_text("No frames found in the video. Please re-upload.")
+            print(f"Processor frames: {self.processor.frames}")
             return
 
         self.append_text("Preprocessing video...")
+        print("Starting preprocessing...")
         self.preprocess_button.setEnabled(False)  # Disable preprocess button
         self.process_button.setEnabled(False)  # Disable process button
-        self.start_processing_thread(self.video_path, self.threshold_value, mode='preprocess')
+        self.start_processing_thread(mode='preprocess')
 
-    def onResize(self, event):
-        if self.video_preview_label.pixmap():
-            self.updatePreviewSize()
-
-    def updatePreviewSize(self):
-        if self.video_preview_label.pixmap():
-            available_size = self.video_preview_scroll_area.viewport().size()
-            pixmap = self.video_preview_label.pixmap()
-            scaled_pixmap = pixmap.scaled(available_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.video_preview_label.setPixmap(scaled_pixmap)
-            
-            # center the label if it's smaller than the available space
-            if scaled_pixmap.width() < available_size.width() or scaled_pixmap.height() < available_size.height():
-                self.video_preview_label.setAlignment(Qt.AlignCenter)
-            else:
-                self.video_preview_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-
-            # Scale the pixmap to fit the available size while maintaining aspect ratio
-
-            print(f"Scroll area size: {self.video_preview_scroll_area.size().width()}x{self.video_preview_scroll_area.size().height()}")
-            print(f"Scaled pixmap size: {scaled_pixmap.width()}x{scaled_pixmap.height()}")
-            print(f"Label size: {self.video_preview_label.size().width()}x{self.video_preview_label.size().height()}")
-            if self.video_preview_label.pixmap():
-                print(f"Pixmap size: {self.video_preview_label.pixmap().size().width()}x{self.video_preview_label.pixmap().size().height()}")
-            # Set the scaled pixmap to the label
 
 
 if __name__ == '__main__':
