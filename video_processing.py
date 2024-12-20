@@ -1,5 +1,3 @@
-from weakref import finalize
-
 import cv2
 import numpy as np
 from PyQt5.QtGui import QImage, QPixmap
@@ -15,8 +13,8 @@ class VideoProcessor:
         self.preview_label = preview_label
         self.progress_bar = progress_signal
         self.frames = []
-        self.min_speed = 600
-        self.max_size = 1000
+        self.min_speed = 750
+        self.max_size = 150
         self.object_positions = []
         self.all_positions = []
         self.fgbg = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=threshold_value, detectShadows=False)
@@ -41,41 +39,42 @@ class VideoProcessor:
             raise ValueError("No frames were loaded from the video. Check the file format or codec.")
         print(f"Loaded {len(self.frames)} frames successfully.")
 
+    def extract_object_region(self, frame, x, y, w, h):
+        """
+        Extracts an object region from the frame within the given bounding box.
+        """
+        roi = frame[y:y + h, x:x + w]
+
+        # Convert to grayscale and threshold
+        roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        _, binary_roi = cv2.threshold(roi_gray, self.threshold_value, 255, cv2.THRESH_BINARY)
+
+        # Find contours and create a mask
+        contours, _ = cv2.findContours(binary_roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            mask = np.zeros((h, w), dtype=np.uint8)
+            cv2.drawContours(mask, [contours[0]], -1, 255, -1)
+
+            # Extract object region
+            return cv2.bitwise_and(frame[y:y + h, x:x + w], frame[y:y + h, x:x + w], mask=mask[:, :, None])
+        return None
+
     def process_with_squares(self, green_boxes=None, red_boxes=None):
+        """
+        Processes all detected objects across frames and combines them into the final image.
+        """
         final_image = self.frames[0].copy()
 
-        for i in range(len(self.frames) -1):
+        #for i in range(len(self.frames) -1):
+        for i, frame_positions in enumerate(self.all_positions):
             current_frame = self.frames[i].copy()
             #temp_image = final_image.copy()
 
             # Process all detected positions for this frame
-            for x, y, w, h in self.all_positions[i]:
+            for x, y, w, h in frame_positions:
                 try:
-                    # Get the ROI (region of interest)
-                    roi = self.frames[i + 1][y:y + h, x:x + w]
-
-                    # Convert ROI to grayscale if required for contour detection
-                    if len(roi.shape) == 3:  # Check if ROI is in color
-                        roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-                    else:
-                        roi_gray = roi
-
-                    # Find contours in the binary ROI
-                    _, binary_roi = cv2.threshold(roi_gray, self.threshold_value, 255, cv2.THRESH_BINARY)
-
-                    # Check that binary_roi is single-channel and has type CV_8UC1
-                    assert binary_roi.dtype == np.uint8, f"binary_roi dtype is {binary_roi.dtype}, expected uint8"
-                    assert len(binary_roi.shape) == 2, f"binary_roi shape is {binary_roi.shape}, expected single-channel"
-
-                    contours, _ = cv2.findContours(binary_roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    if contours:
-                        # Create a mask for the current object
-                        mask = np.zeros((h, w), dtype=np.uint8)
-                        cv2.drawContours(mask, [contours[0]], -1, 255, -1)
-
-                        object_region = cv2.bitwise_and(current_frame[y:y + h, x:x + w], current_frame[y:y + h, x:x + w], mask=mask[:, :, None])
-
-                        # Place the extracted object region into the composite image
+                    object_region = self.extract_object_region(current_frame, x, y, w, h)
+                    if object_region is not None:
                         final_image[y:y + h, x:x + w] = object_region
                 except Exception as e:
                     print(f"Error processing object at frame {i}, box ({x}, {y}, {w}, {h}): {e}")
@@ -94,15 +93,10 @@ class VideoProcessor:
         frame_diff = cv2.absdiff(prev_grey, grey)
         _, thresh = cv2.threshold(frame_diff, self.threshold_value, 255, cv2.THRESH_BINARY)
 
-        # Apply background subtractor for detecting larger, slower movers
-        fgmask = self.fgbg.apply(frame)
-
         # Detect contours for both fast and slow movers
         contours_fast, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        #contours_slow, _ = cv2.findContours(fgmask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         print(f"Contours detected (fast): {len(contours_fast)}")
-        #print(f"Contours detected (slow): {len(contours_slow)}")
 
         fast_positions = []
         #slow_positions = []
@@ -125,12 +119,6 @@ class VideoProcessor:
                         x, y, w, h = cv2.boundingRect(contours_fast[i])
                         fast_positions.append((x, y, w, h))
         self.prev_fast_positions = [pos[0] for pos in current_fast_positions] # update positions for next frame
-
-        # for contour in contours_slow:
-        #     area = cv2.contourArea(contour)
-        #     if area > 50:  # Adjust this value as needed
-        #         (x, y, w, h) = cv2.boundingRect(contour)
-        #         slow_positions.append((x, y, w, h))
 
         return fast_positions, [], frame
 
@@ -171,10 +159,6 @@ class VideoProcessor:
             for (x, y, w, h) in filtered_fast:
                 print(f"Drawing fast box at: x={x}, y={y}, w={w}, h={h}")
                 cv2.rectangle(frame_0, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Green for fast objects
-            # for (x, y, w, h) in slow_positions:
-            #     cv2.rectangle(frame_0, (x, y), (x + w, y + h), (0, 0, 255), 2)  # Red for slow objects
-
-
 
             if self.progress_bar:
                 progress = int((i + 1) / frame_count * 100)

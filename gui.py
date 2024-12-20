@@ -38,7 +38,7 @@ class CustodianApp(QMainWindow):
     DEFAULT_PREVIEW_HEIGHT = 405  # 16:9 aspect ratio
     def __init__(self):
         super().__init__()
-        self.threshold_value = 50
+        self.threshold_value = 25
         self.interpolate_button = None
         self.progress_bar = None
         self.result_window = None
@@ -66,104 +66,112 @@ class CustodianApp(QMainWindow):
     def initUI(self):
         self.setWindowTitle('Dragon Interpolation Generator')
         self.setGeometry(100, 100, 1280, 720)
+
         # Central widget to hold all other widgets
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
-        #central_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
         main_layout = QVBoxLayout(central_widget)
-        preview_layout = QHBoxLayout()
+        button_and_preview_layout = QHBoxLayout()
+
+        # Add video preview label
+        self.video_preview_label = QLabel(self)
+        self.video_preview_label.setAlignment(Qt.AlignCenter)
+        self.video_preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.video_preview_label.setScaledContents(False)
+        self.video_preview_label.setMinimumSize(320, 180)
+        self.video_preview_label.setMaximumSize(1920, 1080)
+
+        button_and_preview_layout.addWidget(self.video_preview_label)
+
         button_layout = QVBoxLayout()
-        layout2 = QVBoxLayout()
 
         # upload button
         self.upload_button = QPushButton('Upload Video', self)
         self.upload_button.clicked.connect(self.upload_video)
-        button_layout.addWidget(self.upload_button)
         self.upload_button.setFixedHeight(40)
+        button_layout.addWidget(self.upload_button)
 
         # Preprocess button
         self.preprocess_button = QPushButton('Preprocess', self)
         self.preprocess_button.clicked.connect(self.preprocess_video)
-        button_layout.addWidget(self.preprocess_button)
         self.preprocess_button.setFixedHeight(40)
+        button_layout.addWidget(self.preprocess_button)
 
         # Process button
         self.process_button = QPushButton('Process', self)
         self.process_button.clicked.connect(self.start_processing)
-        button_layout.addWidget(self.process_button)
         self.process_button.setFixedHeight(40)
         self.process_button.setEnabled(False)  # Disable initially
+        button_layout.addWidget(self.process_button)
 
-        main_layout.addLayout(button_layout)
+        button_layout.addStretch(1)
+        button_and_preview_layout.addLayout(button_layout)
+        main_layout.addLayout(button_and_preview_layout)
 
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        main_layout.addWidget(spacer)
-
-        # Add video preview label
-        self.video_preview_label = QLabel(self)
-        self.video_preview_label.setFixedSize(self.DEFAULT_PREVIEW_WIDTH, self.DEFAULT_PREVIEW_HEIGHT)
-        self.video_preview_label.setAlignment(Qt.AlignCenter)
-        self.video_preview_label.setScaledContents(False)
-        preview_layout.addWidget(self.video_preview_label)
-        main_layout.addLayout(preview_layout)
+        sliders_container = QWidget()
+        sliders_layout = QVBoxLayout(sliders_container)
 
         # Add threshold label
         self.threshold_label = QLabel(f'Threshold: {self.threshold_value}', self)
-        layout2.addWidget(self.threshold_label)
+        #self.threshold_label.setFixedHeight(20)
+        sliders_layout.addWidget(self.threshold_label)
 
         #add slider for threshold control
         self.threshold_slider = QSlider(Qt.Horizontal, self)
         self.threshold_slider.setMinimum(0)
-        self.threshold_slider.setMaximum(100)
+        self.threshold_slider.setMaximum(250)
         self.threshold_slider.setValue(self.threshold_value)
         self.threshold_slider.valueChanged.connect(self.update_threshold)
-        layout2.addWidget(self.threshold_slider)
+        sliders_layout.addWidget(self.threshold_slider)
+
+        #add min_speed label
+        self.min_speed_label = QLabel(f'Min Speed: {self.processor.min_speed}', self)
+        #self.threshold_label.setFixedHeight(20)
+
+        sliders_layout.addWidget(self.min_speed_label)
 
         #add slider for minimum  speed control
-        self.min_speed_label = QLabel(f'Min Speed: {self.processor.min_speed}', self)
-        layout2.addWidget(self.min_speed_label)
         self.min_speed_slider = QSlider(Qt.Horizontal, self)
         self.min_speed_slider.setMinimum(0)
-        self.min_speed_slider.setMaximum(1000)
+        self.min_speed_slider.setMaximum(1500)
         self.min_speed_slider.setValue(self.processor.min_speed)
         self.min_speed_slider.valueChanged.connect(self.update_min_speed)
-        layout2.addWidget(self.min_speed_slider)
+        #self.threshold_label.setFixedHeight(20)
+        sliders_layout.addWidget(self.min_speed_slider)
 
-        # add slider for maximum size control
+        # add max_size label
         self.max_size_label = QLabel(f'Max Size: {self.processor.max_size}', self)
-        layout2.addWidget(self.max_size_label)
+        #self.threshold_label.setFixedHeight(20)
+        sliders_layout.addWidget(self.max_size_label)
+
+        #add slider for max size control
         self.max_size_slider = QSlider(Qt.Horizontal, self)
         self.max_size_slider.setMinimum(0)
-        self.max_size_slider.setMaximum(5000)
+        self.max_size_slider.setMaximum(1000)
         self.max_size_slider.setValue(self.processor.max_size)
         self.max_size_slider.valueChanged.connect(self.update_max_size)
-        layout2.addWidget(self.max_size_slider)
-
-        #display label for video
-        self.video_label = QLabel(self)
-        self.video_label.setMaximumSize(1280, 720)  # Set a maximum size
-        self.video_label.setScaledContents(True)  # Scale the image to fit the label
-        layout2.addWidget(self.video_label)
+        #self.threshold_label.setFixedHeight(20)
+        sliders_layout.addWidget(self.max_size_slider)
 
         # Add info text panel to display print statements
         self.info_text_panel = QTextEdit(self)
         self.info_text_panel.setReadOnly(True)  # Make it read-only
-        layout2.addWidget(self.info_text_panel)
+        self.info_text_panel.setFixedHeight(60)
+        sliders_layout.addWidget(self.info_text_panel)
 
         # Progress bar for processing
         self.progress_bar = QProgressBar(self)
-        layout2.addWidget(self.progress_bar)
+        sliders_layout.addWidget(self.progress_bar)
 
-        # Display label for final video - do I need this?
-        self.final_video_label = QLabel(self)
-        self.final_video_label.setScaledContents(False)  # Ensure aspect ratio is preserved
-        layout2.addWidget(self.final_video_label)
-
-        main_layout.addLayout(layout2)
+        sliders_container.setFixedHeight(250)
+        main_layout.addWidget(sliders_container)
 
         self.show()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.frames and self.video_preview_label:
+            self.display_frame(self.current_frame_index)
 
     def upload_video(self):
         if hasattr(self, 'result_window') and self.result_window is not None:
@@ -208,25 +216,27 @@ class CustodianApp(QMainWindow):
                 self.video_path = None
                 self.processor = None
 
-            # display the filename
-
             self.frames = self.processor.frames
-
-            # Automatically start preprocessing
             self.preprocess_video()
 
     def display_frame(self, frame_index, rgb_frame=None):
         if rgb_frame is None:
             if 0 <= frame_index < len(self.frames):
                 rgb_frame = cv2.cvtColor(self.frames[frame_index], cv2.COLOR_BGR2RGB)
-        elif rgb_frame is not None:
+        if rgb_frame is not None:
             if 0 <= frame_index < len(self.frames):
                 rgb_frame = cv2.cvtColor(self.frames[frame_index], cv2.COLOR_BGR2RGB)
             height, width, channel = rgb_frame.shape
             bytes_per_line = channel * width
             q_image = QImage(rgb_frame.data, width, height, bytes_per_line, QImage.Format_RGB888)
-            pixmap = QPixmap.fromImage(q_image).scaled(self.video_preview_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.video_preview_label.setPixmap(pixmap)
+
+            # Dynamically fetch the current size of the label
+            label_width = self.video_preview_label.width()
+            label_height = self.video_preview_label.height()
+
+            pixmap = QPixmap.fromImage(q_image)
+            scaled_pixmap = pixmap.scaled(label_width, label_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.video_preview_label.setPixmap(scaled_pixmap)
             self.video_preview_label.update()
 
     def update_threshold(self, value):

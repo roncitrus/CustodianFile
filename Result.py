@@ -5,9 +5,6 @@ from PyQt5.QtCore import Qt
 import cv2
 import os
 
-
-
-
 class ResultWindow(QWidget):
     def __init__(self, image, video_path, parent=None):
         super().__init__(parent)
