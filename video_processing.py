@@ -1,3 +1,5 @@
+from weakref import finalize
+
 import cv2
 import numpy as np
 from PyQt5.QtGui import QImage, QPixmap
@@ -6,15 +8,17 @@ from PyQt5.QtWidgets import QApplication
 
 class VideoProcessor:
 
-    def __init__( self, video_path, threshold_value, preview_label, progress_bar = None):
+    def __init__( self, video_path, threshold_value, preview_label, progress_signal = None):
+        self.prev_fast_positions = []
         self.video_path = video_path
         self.threshold_value = threshold_value
         self.preview_label = preview_label
-        self.progress_bar = progress_bar
+        self.progress_bar = progress_signal
         self.frames = []
-        self.min_speed = 1
+        self.min_speed = 600
         self.max_size = 1000
         self.object_positions = []
+        self.all_positions = []
         self.fgbg = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=threshold_value, detectShadows=False)
 
     def load_video(self):
@@ -27,100 +31,108 @@ class VideoProcessor:
             raise IOError(f"Error opening video file {self.video_path}")
 
         self.frames = []
-        fps = cap.get(cv2.CAP_PROP_FPS)
+        #fps = cap.get(cv2.CAP_PROP_FPS)
         success, frame = cap.read()
         while success:
             self.frames.append(frame)
             success, frame = cap.read()
         cap.release()
-
+        if not self.frames:
+            raise ValueError("No frames were loaded from the video. Check the file format or codec.")
+        print(f"Loaded {len(self.frames)} frames successfully.")
 
     def process_with_squares(self, green_boxes=None, red_boxes=None):
-        frames = self.frames
-        frame_count = len(frames)
-        all_positions = []
-        
-        for i in range(1, frame_count):
-            frame = frames[i]
-            prev_frame = frames[i-1]
+        final_image = self.frames[0].copy()
 
-            fast_positions, slow_positions = self.detect_fast_objects(frame, prev_frame, self.threshold_value)
+        for i in range(len(self.frames) -1):
+            current_frame = self.frames[i].copy()
+            #temp_image = final_image.copy()
 
-            #filter out positions that overlap with slow positions
-            filtered_positions = [pos for pos in fast_positions if not self.overlaps_with_slow(pos, slow_positions)]
+            # Process all detected positions for this frame
+            for x, y, w, h in self.all_positions[i]:
+                try:
+                    # Get the ROI (region of interest)
+                    roi = self.frames[i + 1][y:y + h, x:x + w]
 
-            #store the positions for the final image creation
-            all_positions.append((frame, filtered_positions))
+                    # Convert ROI to grayscale if required for contour detection
+                    if len(roi.shape) == 3:  # Check if ROI is in color
+                        roi_gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+                    else:
+                        roi_gray = roi
 
-            fast_positions, slow_positions = self.detect_fast_objects(frame, prev_frame, self.threshold_value)
-            
-            # Filter out positions that overlap with slow positions
-            filtered_positions = [pos for pos in fast_positions if not self.overlaps_with_slow(pos, slow_positions)]
+                    # Find contours in the binary ROI
+                    _, binary_roi = cv2.threshold(roi_gray, self.threshold_value, 255, cv2.THRESH_BINARY)
 
-            if self.progress_bar:
-                progress = int((i + 1) / frame_count * 100)
-                self.progress_bar(progress)
+                    # Check that binary_roi is single-channel and has type CV_8UC1
+                    assert binary_roi.dtype == np.uint8, f"binary_roi dtype is {binary_roi.dtype}, expected uint8"
+                    assert len(binary_roi.shape) == 2, f"binary_roi shape is {binary_roi.shape}, expected single-channel"
 
-        #create the final image
-        return self.create_final_image(frames[0], all_positions, green_boxes, red_boxes)
+                    contours, _ = cv2.findContours(binary_roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    if contours:
+                        # Create a mask for the current object
+                        mask = np.zeros((h, w), dtype=np.uint8)
+                        cv2.drawContours(mask, [contours[0]], -1, 255, -1)
 
-    def create_final_image(self, first_frame, all_positions, green_boxes=None, red_boxes=None):
-        final_image = first_frame.copy()
+                        object_region = cv2.bitwise_and(current_frame[y:y + h, x:x + w], current_frame[y:y + h, x:x + w], mask=mask[:, :, None])
 
-        # Copy regions from green boxes
-        if green_boxes:
-            for box in green_boxes:
-                x, y, w, h = box
-                region = first_frame[y:y+h, x:x+w]  # Extract the region from the first frame
-                final_image[y:y+h, x:x+w] = region  # Paste the region into the final image
+                        # Place the extracted object region into the composite image
+                        final_image[y:y + h, x:x + w] = object_region
+                except Exception as e:
+                    print(f"Error processing object at frame {i}, box ({x}, {y}, {w}, {h}): {e}")
 
-        # exclude regions from red boxes
-        if red_boxes:
-            for box in red_boxes:
-                x, y, w, h = box
-                final_image[y:y+h, x:x+w] = 0  # Set the region to black (or any other color to indicate exclusion
+        return [final_image]
 
-        for frame, positions in all_positions:
-            for (x, y, w, h) in positions:
-                object_region = frame[y:y+h, x:x+w]  # Clip the object region
-                # Insert cropped object
-                final_image[y:y+h, x:x+w] = object_region
 
-        return final_image
+    def detect_fast_objects(self, frame, prev_frame):
+        if self.prev_fast_positions is None:
+            self.prev_fast_positions = []
 
-    def detect_fast_objects(self, frame, prev_frame, threshold):
         grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         prev_grey = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
 
         # Compute frame difference for fast movers detection
         frame_diff = cv2.absdiff(prev_grey, grey)
-        _, thresh = cv2.threshold(frame_diff, threshold, 255, cv2.THRESH_BINARY)
+        _, thresh = cv2.threshold(frame_diff, self.threshold_value, 255, cv2.THRESH_BINARY)
 
         # Apply background subtractor for detecting larger, slower movers
         fgmask = self.fgbg.apply(frame)
 
         # Detect contours for both fast and slow movers
         contours_fast, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours_slow, _ = cv2.findContours(fgmask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        #contours_slow, _ = cv2.findContours(fgmask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        print(f"Contours detected (fast): {len(contours_fast)}")
+        #print(f"Contours detected (slow): {len(contours_slow)}")
 
         fast_positions = []
-        slow_positions = []
+        #slow_positions = []
+        current_fast_positions = []  # Store positions in the current frame
 
-        for contour in contours_fast:
+        for i, contour in enumerate(contours_fast):
             area = cv2.contourArea(contour)
-            if 5 < area < self.max_size:  # Adjust these values as needed
-                (x, y, w, h) = cv2.boundingRect(contour)
-                speed = np.linalg.norm(np.array([x+w/2, y+h/2]) - np.array([0, 0]))
-                if speed > self.min_speed:
-                    fast_positions.append((x, y, w, h))
+            if 5 < area < self.max_size:  # Ensure reasonable area range
+                print(f"Fast contour area: {area}, max size: {self.max_size}")
+                x, y, w, h = cv2.boundingRect(contour)
+                current_fast_positions.append(((x + w / 2, y + h / 2), (w, h), i))  # Store center and dimensions
 
-        for contour in contours_slow:
-            area = cv2.contourArea(contour)
-            if area > 50:  # Adjust this value as needed
-                (x, y, w, h) = cv2.boundingRect(contour)
-                slow_positions.append((x, y, w, h))
+        # Calculate speeds based on previous frame data
+        for (cx, cy), (w, h), i in current_fast_positions:
+            if self.prev_fast_positions:
+                for prev_cx, prev_cy in self.prev_fast_positions:
+                    speed = np.linalg.norm(np.array([cx, cy]) - np.array([prev_cx, prev_cy]))
+                    if speed > self.min_speed:
+                        print(f"Object speed: {speed}, min speed: {self.min_speed}")
+                        x, y, w, h = cv2.boundingRect(contours_fast[i])
+                        fast_positions.append((x, y, w, h))
+        self.prev_fast_positions = [pos[0] for pos in current_fast_positions] # update positions for next frame
 
-        return fast_positions, slow_positions
+        # for contour in contours_slow:
+        #     area = cv2.contourArea(contour)
+        #     if area > 50:  # Adjust this value as needed
+        #         (x, y, w, h) = cv2.boundingRect(contour)
+        #         slow_positions.append((x, y, w, h))
+
+        return fast_positions, [], frame
 
     def update_preview(self, frame):
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -136,24 +148,45 @@ class VideoProcessor:
         self.preview_label.setPixmap(scaled_pixmap)
         QApplication.processEvents()
 
-    def preprocess_all_frames(self, threshold):
-        all_fast_positions = []
-        all_slow_positions = []
+    def preprocess_all_frames(self):
+        self.preprocessed_frames = []
+        self.all_positions = []
         frame_count = len(self.frames)
+        frame_0 = self.frames[0].copy()  # Start with the first frame
 
         for i in range(1, frame_count):
-            frame = self.frames[i]
-            prev_frame = self.frames[i-1]
+            print(f"Processing frame {i}/{frame_count}")
+            self.create_background_subtractor()
+            frame = self.frames[i].copy()
+            prev_frame = self.frames[i-1].copy() if i > 0 else None
+            fast_positions, _, _ = self.detect_fast_objects(frame, prev_frame)
 
-            fast_positions, slow_positions = self.detect_fast_objects(frame, prev_frame, threshold)
-            all_fast_positions.extend(fast_positions)
-            all_slow_positions.extend(slow_positions)
+            #filtered_fast = [pos for pos in fast_positions if not self.overlaps_with_slow(pos, slow_positions)]
+
+            filtered_fast = fast_positions
+            print(f"Filtered fast objects: {len(filtered_fast)}")
+
+            self.all_positions.append(filtered_fast)
+
+            for (x, y, w, h) in filtered_fast:
+                print(f"Drawing fast box at: x={x}, y={y}, w={w}, h={h}")
+                cv2.rectangle(frame_0, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Green for fast objects
+            # for (x, y, w, h) in slow_positions:
+            #     cv2.rectangle(frame_0, (x, y), (x + w, y + h), (0, 0, 255), 2)  # Red for slow objects
+
+
 
             if self.progress_bar:
                 progress = int((i + 1) / frame_count * 100)
-                self.progress_bar(progress)
+                self.progress_bar.emit(progress)
 
-        return self.create_preprocessed_image(all_fast_positions, all_slow_positions)
+        self.preprocessed_frames.append(frame_0)
+        print("Preprocessing completed.")
+        print(f"Frames after preprocessing: {len(self.frames)}")
+        print(f"Preprocessed frames: {len(self.preprocessed_frames)}")
+        self.update_preview(frame_0)
+        return self.preprocessed_frames
+
 
     def create_preprocessed_image(self, fast_positions, slow_positions):
         return self.draw_object_rectangles(self.frames[0], fast_positions, slow_positions)
@@ -174,3 +207,5 @@ class VideoProcessor:
             cv2.rectangle(result_image, (x, y), (x + w, y + h), (0, 0, 255), 2)
         return result_image
 
+    def create_background_subtractor(self):
+        self.fgbg = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=self.threshold_value, detectShadows=False)
