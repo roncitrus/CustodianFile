@@ -1,15 +1,11 @@
 import os
 import sys
 import cv2
-import numpy as np
-from sympy import preview
-from torch.ao.nn.quantized.functional import threshold
 
 from Result import ResultWindow
-from PyQt5.QtWidgets import QSizePolicy, QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar, QScrollArea, QCheckBox
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer
+from PyQt5.QtWidgets import QSizePolicy, QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QPixmap, QImage
-from video_processing import VideoProcessor
 import video_processing
 
 class VideoProcessingThread(QThread):
@@ -19,7 +15,6 @@ class VideoProcessingThread(QThread):
     def __init__(self, processor, mode='process', green_boxes=None, red_boxes=None):
         super().__init__()
         self.processor = processor
-        self.threshold = processor.threshold_value
         self.mode = mode
         self.green_boxes = green_boxes
         self.red_boxes = red_boxes
