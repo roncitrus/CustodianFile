@@ -19,7 +19,7 @@ class VideoProcessingThread(QThread):
     def __init__(self, processor, mode='process', green_boxes=None, red_boxes=None):
         super().__init__()
         self.processor = processor
-        self.threshold = threshold
+        self.threshold = processor.threshold_value
         self.mode = mode
         self.green_boxes = green_boxes
         self.red_boxes = red_boxes
