@@ -268,7 +268,7 @@ class CustodianApp(QMainWindow):
         print(f"Starting {mode} thread...")
         self.thread = VideoProcessingThread(
             self.processor, mode, green_boxes, red_boxes)  # pass in self.processor here
-        self.processor.progress_bar = self.thread.progress
+        self.processor.progress_signal = self.thread.progress
         self.thread.progress.connect(self.progress_bar.setValue)
         self.thread.finished.connect(self.on_processing_finished)
         self.thread.start()
