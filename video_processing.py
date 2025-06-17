@@ -136,6 +136,20 @@ class VideoProcessor:
         self.preview_label.setPixmap(scaled_pixmap)
         QApplication.processEvents()
 
+    def detect_objects(self, frame, prev_frame):
+        """Return bounding boxes for detected fast moving objects."""
+        fast_positions, _, _ = self.detect_fast_objects(frame, prev_frame)
+
+        filtered_fast = fast_positions
+        print(f"Filtered fast objects: {len(filtered_fast)}")
+        return filtered_fast
+
+    def draw_boxes(self, frame, boxes):
+        """Draw green rectangles around detected objects on the frame."""
+        for (x, y, w, h) in boxes:
+            print(f"Drawing fast box at: x={x}, y={y}, w={w}, h={h}")
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
     def preprocess_all_frames(self):
         self.preprocessed_frames = []
         self.all_positions = []
@@ -147,18 +161,10 @@ class VideoProcessor:
             self.create_background_subtractor()
             frame = self.frames[i].copy()
             prev_frame = self.frames[i-1].copy() if i > 0 else None
-            fast_positions, _, _ = self.detect_fast_objects(frame, prev_frame)
 
-            #filtered_fast = [pos for pos in fast_positions if not self.overlaps_with_slow(pos, slow_positions)]
-
-            filtered_fast = fast_positions
-            print(f"Filtered fast objects: {len(filtered_fast)}")
-
+            filtered_fast = self.detect_objects(frame, prev_frame)
             self.all_positions.append(filtered_fast)
-
-            for (x, y, w, h) in filtered_fast:
-                print(f"Drawing fast box at: x={x}, y={y}, w={w}, h={h}")
-                cv2.rectangle(frame_0, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Green for fast objects
+            self.draw_boxes(frame_0, filtered_fast)
 
             if self.progress_signal:
                 progress = int((i + 1) / frame_count * 100)
