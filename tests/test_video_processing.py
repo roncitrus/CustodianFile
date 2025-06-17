@@ -57,3 +57,20 @@ def test_overlaps_with_slow_returns_true_when_overlap():
     fast_box = (10, 10, 10, 10)
     slow_boxes = [(15, 15, 10, 10)]
     assert proc.overlaps_with_slow(fast_box, slow_boxes)
+
+
+def test_process_with_squares_uses_correct_frame_indices():
+    """Ensure object regions are copied from the correct frames."""
+    frame1 = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
+    frame2 = make_frame_with_rect((5, 2), (8, 5), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=None)
+    proc.min_speed = 1
+    proc.max_size = 200
+    proc.frames = [frame1, frame2]
+
+    # Preprocess to populate all_positions
+    proc.preprocess_all_frames()
+    result_image = proc.process_with_squares()[0]
+
+    # The moving square from frame2 should appear at (5,2)-(8,5) in the result
+    assert result_image[2:6, 5:9].sum() > 0

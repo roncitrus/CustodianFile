@@ -11,7 +11,7 @@ class VideoProcessor:
         self.video_path = video_path
         self.threshold_value = threshold_value
         self.preview_label = preview_label
-        self.progress_bar = progress_signal
+        self.progress_signal = progress_signal
         self.frames = []
         self.min_speed = 750
         self.max_size = 150
@@ -65,8 +65,8 @@ class VideoProcessor:
         """
         final_image = self.frames[0].copy()
 
-        #for i in range(len(self.frames) -1):
-        for i, frame_positions in enumerate(self.all_positions):
+        # for each recorded frame's positions start from the second frame
+        for i, frame_positions in enumerate(self.all_positions, start=1):
             current_frame = self.frames[i].copy()
             #temp_image = final_image.copy()
 
@@ -160,9 +160,9 @@ class VideoProcessor:
                 print(f"Drawing fast box at: x={x}, y={y}, w={w}, h={h}")
                 cv2.rectangle(frame_0, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Green for fast objects
 
-            if self.progress_bar:
+            if self.progress_signal:
                 progress = int((i + 1) / frame_count * 100)
-                self.progress_bar.emit(progress)
+                self.progress_signal.emit(progress)
 
         self.preprocessed_frames.append(frame_0)
         print("Preprocessing completed.")
