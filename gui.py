@@ -4,29 +4,10 @@ import cv2
 
 from Result import ResultWindow
 from PyQt5.QtWidgets import QSizePolicy, QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap, QImage
 import video_processing
-
-class VideoProcessingThread(QThread):
-    finished = pyqtSignal(object)
-    progress = pyqtSignal(int)
-
-    def __init__(self, processor, mode='process', green_boxes=None, red_boxes=None):
-        super().__init__()
-        self.processor = processor
-        self.mode = mode
-        self.green_boxes = green_boxes
-        self.red_boxes = red_boxes
-
-    def run(self):
-        if self.mode == 'preprocess':
-            result_image = self.processor.preprocess_all_frames()
-        else:
-            self.processor.preprocess_all_frames()
-            result_image = self.processor.process_with_squares(self.green_boxes, self.red_boxes)
-
-        self.finished.emit(result_image)
+from video_thread import VideoProcessingThread
 
 class CustodianApp(QMainWindow):
     DEFAULT_PREVIEW_WIDTH = 720
