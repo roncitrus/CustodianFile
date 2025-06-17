@@ -65,8 +65,8 @@ class VideoProcessor:
         """
         final_image = self.frames[0].copy()
 
-        #for i in range(len(self.frames) -1):
-        for i, frame_positions in enumerate(self.all_positions):
+        # for each recorded frame's positions start from the second frame
+        for i, frame_positions in enumerate(self.all_positions, start=1):
             current_frame = self.frames[i].copy()
             #temp_image = final_image.copy()
 
