@@ -9,6 +9,20 @@ from PyQt5.QtGui import QPixmap, QImage
 import video_processing
 from video_thread import VideoProcessingThread
 
+
+class EraserLabel(QLabel):
+    """QLabel that notifies its parent of mouse clicks for erasing boxes."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent_window = parent
+
+    def mousePressEvent(self, event):
+        if self.parent_window and getattr(self.parent_window, 'eraser_mode', False):
+            x = event.pos().x()
+            y = event.pos().y()
+            self.parent_window.handle_eraser_click(x, y)
+        super().mousePressEvent(event)
+
 class CustodianApp(QMainWindow):
     DEFAULT_PREVIEW_WIDTH = 720
     DEFAULT_PREVIEW_HEIGHT = 405  # 16:9 aspect ratio
@@ -36,6 +50,7 @@ class CustodianApp(QMainWindow):
         self.slider_timer = QTimer(self)
         self.slider_timer.setSingleShot(True)
         self.slider_timer.timeout.connect(self.process_slider_change)
+        self.eraser_mode = False
 
         self.initUI()
 
@@ -50,7 +65,7 @@ class CustodianApp(QMainWindow):
         button_and_preview_layout = QHBoxLayout()
 
         # Add video preview label
-        self.video_preview_label = QLabel(self)
+        self.video_preview_label = EraserLabel(self)
         self.video_preview_label.setAlignment(Qt.AlignCenter)
         self.video_preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.video_preview_label.setScaledContents(False)
@@ -79,6 +94,14 @@ class CustodianApp(QMainWindow):
         self.process_button.setFixedHeight(40)
         self.process_button.setEnabled(False)  # Disable initially
         button_layout.addWidget(self.process_button)
+
+        # Eraser toggle button
+        self.eraser_button = QPushButton('Eraser: Off', self)
+        self.eraser_button.setCheckable(True)
+        self.eraser_button.clicked.connect(self.toggle_eraser)
+        self.eraser_button.setFixedHeight(40)
+        self.eraser_button.setEnabled(False)
+        button_layout.addWidget(self.eraser_button)
 
         button_layout.addStretch(1)
         button_and_preview_layout.addLayout(button_layout)
@@ -237,6 +260,31 @@ class CustodianApp(QMainWindow):
             self.display_frame(self.current_frame_index)
             self.slider_timer.start(300)
 
+    def toggle_eraser(self):
+        self.eraser_mode = not self.eraser_mode
+        state = 'On' if self.eraser_mode else 'Off'
+        self.eraser_button.setText(f'Eraser: {state}')
+
+    def label_to_frame_coordinates(self, x, y):
+        if not self.processor or not self.processor.frames:
+            return 0, 0
+        frame_h, frame_w = self.processor.frames[0].shape[:2]
+        label_w = self.video_preview_label.width()
+        label_h = self.video_preview_label.height()
+        scale = min(label_w / frame_w, label_h / frame_h)
+        offset_x = (label_w - frame_w * scale) / 2
+        offset_y = (label_h - frame_h * scale) / 2
+        frame_x = int((x - offset_x) / scale)
+        frame_y = int((y - offset_y) / scale)
+        frame_x = max(0, min(frame_w - 1, frame_x))
+        frame_y = max(0, min(frame_h - 1, frame_y))
+        return frame_x, frame_y
+
+    def handle_eraser_click(self, x, y):
+        fx, fy = self.label_to_frame_coordinates(x, y)
+        if self.processor:
+            self.processor.remove_boxes_at(fx, fy)
+
     def process_slider_change(self):
         print("slider changed - preprocess_video called")
         if self.processor and self.frames:
@@ -284,6 +332,7 @@ class CustodianApp(QMainWindow):
             self.process_button.setEnabled(True)
             print(f"Process button enabled: {self.process_button.isEnabled()}")
             self.preprocess_button.setEnabled(True)  # Re-enable preprocess button
+            self.eraser_button.setEnabled(True)
         else:
             print("Processing final image.")
             if hasattr(self, 'result_window') and self.result_window is not None:
@@ -307,6 +356,7 @@ class CustodianApp(QMainWindow):
         print("Starting preprocessing...")
         self.preprocess_button.setEnabled(False)  # Disable preprocess button
         self.process_button.setEnabled(False)  # Disable process button
+        self.eraser_button.setEnabled(False)
         self.start_processing_thread(mode='preprocess')
 
 
