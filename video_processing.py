@@ -66,7 +66,7 @@ class VideoProcessor:
         final_image = self.frames[0].copy()
 
         # for each recorded frame's positions start from the second frame
-        for i, frame_positions in enumerate(self.all_positions, start=1):
+        for i, frame_positions in enumerate(self.all_positions):
             current_frame = self.frames[i].copy()
             #temp_image = final_image.copy()
 
@@ -199,3 +199,30 @@ class VideoProcessor:
 
     def create_background_subtractor(self):
         self.fgbg = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=self.threshold_value, detectShadows=False)
+
+    def render_preprocessed_preview(self):
+        """Recreate the first frame with all current boxes."""
+        frame = self.frames[0].copy()
+        for positions in self.all_positions:
+            self.draw_boxes(frame, positions)
+        return frame
+
+    def remove_boxes_at(self, x, y):
+        """Remove any bounding box containing the given coordinates."""
+        removed = False
+        for positions in self.all_positions:
+            for box in positions[:]:
+                bx, by, bw, bh = box
+                if bx <= x <= bx + bw and by <= y <= by + bh:
+                    positions.remove(box)
+                    removed = True
+
+        if removed:
+            updated = self.render_preprocessed_preview()
+            if self.preprocessed_frames:
+                self.preprocessed_frames[0] = updated
+            else:
+                self.preprocessed_frames = [updated]
+            if self.preview_label is not None:
+                self.update_preview(updated)
+
