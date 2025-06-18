@@ -87,7 +87,7 @@ class ResultWindow(QWidget):
         self.label.setPixmap(pixmap)
         self.label.adjustSize()
 
-        # resize window to mathc image size
+        # resize window to match image size
         self.resize(image_width, image_height)
 
 

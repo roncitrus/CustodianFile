@@ -123,6 +123,9 @@ class VideoProcessor:
         return fast_positions, [], frame
 
     def update_preview(self, frame):
+        if self.preview_label is None:
+            return
+
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         height, width, channel = rgb_frame.shape
         bytes_per_line = 3 * width
