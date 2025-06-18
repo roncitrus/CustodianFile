@@ -43,7 +43,7 @@ def test_detect_fast_objects_identifies_movement():
 def test_preprocess_all_frames_updates_preview_and_returns_frame():
     frame1 = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
     frame2 = make_frame_with_rect((5, 2), (8, 5), size=(20, 20))
-    proc = DummyProcessor(None, threshold_value=5, preview_label=None)
+    proc = DummyProcessor(None, threshold_value=5, preview_label=object())
     proc.min_speed = 1
     proc.max_size = 200
     proc.frames = [frame1, frame2]
@@ -93,3 +93,33 @@ def test_load_video_valid_sample(tmp_path):
     assert len(proc.frames) == 3
 
     video_file.unlink()
+
+
+def test_remove_boxes_at_removes_box():
+    frame1 = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
+    frame2 = make_frame_with_rect((5, 2), (8, 5), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=None)
+    proc.min_speed = 1
+    proc.max_size = 200
+    proc.frames = [frame1, frame2]
+    proc.all_positions = [[(2, 2, 3, 3)], []]
+    proc.preprocessed_frames = [frame1.copy()]
+
+    original_count = sum(len(p) for p in proc.all_positions)
+    proc.remove_boxes_at(2, 2)
+    new_count = sum(len(p) for p in proc.all_positions)
+    assert new_count == original_count - 1
+
+
+def test_remove_boxes_at_updates_preview():
+    frame = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=object())
+    proc.min_speed = 1
+    proc.max_size = 200
+    proc.frames = [frame, frame.copy()]
+    proc.all_positions = [[(2, 2, 3, 3)]]
+    proc.preprocessed_frames = [frame.copy()]
+
+    proc.remove_boxes_at(3, 3)
+    assert hasattr(proc, "preview_updated") and proc.preview_updated
+
