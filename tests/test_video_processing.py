@@ -74,3 +74,22 @@ def test_process_with_squares_uses_correct_frame_indices():
 
     # The moving square from frame2 should appear at (5,2)-(8,5) in the result
     assert result_image[2:6, 5:9].sum() > 0
+
+
+def test_load_video_valid_sample(tmp_path):
+    """VideoProcessor.load_video should read frames from a small temporary video."""
+    video_file = tmp_path / "temp.mp4"
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(str(video_file), fourcc, 1, (8, 8))
+    for i in range(3):
+        frame = np.full((8, 8, 3), i, dtype=np.uint8)
+        writer.write(frame)
+    writer.release()
+
+    proc = VideoProcessor(str(video_file), threshold_value=5, preview_label=None)
+    proc.load_video()
+
+    assert len(proc.frames) == 3
+
+    video_file.unlink()
