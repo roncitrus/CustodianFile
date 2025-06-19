@@ -101,7 +101,9 @@ class CustodianApp(QMainWindow):
         self.slider_timer.timeout.connect(self.process_slider_change)
         self.eraser_mode = False
         self.eraser_radius = 10
+
         self.cancel_button = None
+
 
         self.initUI()
 
@@ -451,8 +453,6 @@ class CustodianApp(QMainWindow):
         self.toggle_eraser()
         self.eraser_button.setEnabled(False)
         self.start_processing_thread(mode='preprocess')
-
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
