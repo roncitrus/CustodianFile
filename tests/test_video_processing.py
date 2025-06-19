@@ -124,6 +124,10 @@ def test_remove_boxes_at_updates_preview():
     assert hasattr(proc, "preview_updated") and proc.preview_updated
 
 
+    proc.remove_boxes_at(3, 3, radius=0)
+    assert hasattr(proc, "preview_updated") and proc.preview_updated
+
+
 def test_remove_boxes_at_respects_radius():
     frame = make_frame_with_rect((0, 0), (15, 15), size=(20, 20))
     proc = DummyProcessor(None, threshold_value=5, preview_label=object())

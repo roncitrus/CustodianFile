@@ -77,7 +77,7 @@ class CustodianApp(QMainWindow):
     DEFAULT_PREVIEW_HEIGHT = 405  # 16:9 aspect ratio
     def __init__(self):
         super().__init__()
-        self.threshold_value = 25
+        self.threshold_value = 110
         self.interpolate_button = None
         self.progress_bar = None
         self.result_window = None
@@ -101,9 +101,9 @@ class CustodianApp(QMainWindow):
         self.slider_timer.timeout.connect(self.process_slider_change)
         self.eraser_mode = False
         self.eraser_radius = 10
-
         self.cancel_button = None
-
+        self.pending_thread_params = None
+        self.cancel_requested = False
 
         self.initUI()
 
@@ -266,6 +266,11 @@ class CustodianApp(QMainWindow):
         self.append_text(f"selected filename = {base_name}")
 
         try:
+            self.threshold_value = 110
+            self.threshold_slider.blockSignals(True)
+            self.threshold_slider.setValue(110)
+            self.threshold_slider.blockSignals(False)
+            self.threshold_label.setText(f'Threshold: {self.threshold_value}')
             self.processor = video_processing.VideoProcessor(self.video_path, self.threshold_value, self.video_preview_label)
             self.processor.load_video()
             self.frames = self.processor.frames
@@ -398,11 +403,15 @@ class CustodianApp(QMainWindow):
 
     def start_processing_thread(self, mode='process', green_boxes=None, red_boxes=None):
         if self.thread is not None and self.thread.isRunning():
-            print("Previous process still running...")
+            print("Previous process still running... cancelling")
+            self.pending_thread_params = (mode, green_boxes, red_boxes)
+            self.cancel_processing()
             return
+
         print(f"Starting {mode} thread...")
+        self.progress_bar.setValue(0)
         self.thread = VideoProcessingThread(
-            self.processor, mode, green_boxes, red_boxes)  # pass in self.processor here
+            self.processor, mode, green_boxes, red_boxes)
         self.processor.progress_signal = self.thread.progress
         self.thread.progress.connect(self.progress_bar.setValue)
         self.thread.finished.connect(self.on_processing_finished)
@@ -412,9 +421,22 @@ class CustodianApp(QMainWindow):
 
     def cancel_processing(self):
         if self.thread and self.thread.isRunning():
+
+            self.cancel_requested = True
             self.thread.requestInterruption()
+            self.cancel_button.setEnabled(False)
+
 
     def on_processing_finished(self, result_images):
+        if self.cancel_requested:
+            self.progress_bar.setValue(0)
+            self.cancel_requested = False
+            if self.pending_thread_params:
+                mode, green, red = self.pending_thread_params
+                self.pending_thread_params = None
+                self.start_processing_thread(mode, green, red)
+                return
+
         if self.thread.mode == 'preprocess':
             print("Preprocessing finished successfully.")
             self.frames = result_images
