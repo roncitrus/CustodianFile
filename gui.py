@@ -28,6 +28,17 @@ class EraserLabel(QLabel):
             return
         super().mousePressEvent(event)
 
+    def mouseMoveEvent(self, event):
+        if (
+            self.parent_window
+            and getattr(self.parent_window, "eraser_mode", False)
+            and (event.buttons() & Qt.LeftButton)
+        ):
+            self.parent_window.handle_eraser_click(event.pos().x(), event.pos().y())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
 class CustodianApp(QMainWindow):
     DEFAULT_PREVIEW_WIDTH = 720
     DEFAULT_PREVIEW_HEIGHT = 405  # 16:9 aspect ratio
