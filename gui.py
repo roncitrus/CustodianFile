@@ -5,7 +5,7 @@ import cv2
 from Result import ResultWindow
 from PyQt5.QtWidgets import QSizePolicy, QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor
 import video_processing
 from video_thread import VideoProcessingThread
 
@@ -19,6 +19,8 @@ class EraserLabel(QLabel):
         self.setMouseTracking(True)
         self._erasing = False
 
+        self._cursor_pos = None
+
     def mousePressEvent(self, event):
         if (
             self.parent_window
@@ -26,28 +28,53 @@ class EraserLabel(QLabel):
             and event.button() == Qt.LeftButton
         ):
             self._erasing = True
-            self.parent_window.handle_eraser_click(event.pos().x(), event.pos().y())
+
+            self._cursor_pos = event.pos()
+            self.parent_window.handle_eraser_click(self._cursor_pos.x(), self._cursor_pos.y())
+            self.update()
             event.accept()
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if (
-            self._erasing
-            and self.parent_window
-            and getattr(self.parent_window, "eraser_mode", False)
-            and (event.buttons() & Qt.LeftButton)
-        ):
-            self.parent_window.handle_eraser_click(event.pos().x(), event.pos().y())
-            event.accept()
-            return
+
+        if self.parent_window and getattr(self.parent_window, "eraser_mode", False):
+            self._cursor_pos = event.pos()
+            if self._erasing and (event.buttons() & Qt.LeftButton):
+                self.parent_window.handle_eraser_click(self._cursor_pos.x(), self._cursor_pos.y())
+                event.accept()
+                self.update()
+                return
+            self.update()
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self._erasing = False
+        self._cursor_pos = event.pos()
+        self.update()
         super().mouseReleaseEvent(event)
-        
+
+    def leaveEvent(self, event):
+        self._cursor_pos = None
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if (
+            self.parent_window
+            and getattr(self.parent_window, "eraser_mode", False)
+            and self._cursor_pos is not None
+        ):
+            radius = self.parent_window.eraser_radius_in_label()
+            painter = QPainter(self)
+            pen = QPen(QColor(255, 0, 0))
+            pen.setWidth(1)
+            painter.setPen(pen)
+            painter.drawEllipse(self._cursor_pos, radius, radius)
+            painter.end()
+
 class CustodianApp(QMainWindow):
     DEFAULT_PREVIEW_WIDTH = 720
     DEFAULT_PREVIEW_HEIGHT = 405  # 16:9 aspect ratio
@@ -299,11 +326,13 @@ class CustodianApp(QMainWindow):
     def update_eraser_radius(self, value):
         self.eraser_radius = value
         self.eraser_radius_label.setText(f'Eraser Radius: {value}')
+        self.video_preview_label.update()
 
     def toggle_eraser(self):
         self.eraser_mode = self.eraser_button.isChecked()
         state = "On" if self.eraser_mode else "Off"
         self.eraser_button.setText(f"Eraser: {state}")
+        self.video_preview_label.update()
 
     def label_to_frame_coordinates(self, x, y):
         if not self.processor or not self.processor.frames:
@@ -319,6 +348,15 @@ class CustodianApp(QMainWindow):
         frame_x = max(0, min(frame_w - 1, frame_x))
         frame_y = max(0, min(frame_h - 1, frame_y))
         return frame_x, frame_y
+
+    def eraser_radius_in_label(self):
+        if not self.processor or not self.processor.frames:
+            return self.eraser_radius
+        frame_h, frame_w = self.processor.frames[0].shape[:2]
+        label_w = self.video_preview_label.width()
+        label_h = self.video_preview_label.height()
+        scale = min(label_w / frame_w, label_h / frame_h)
+        return max(1, int(self.eraser_radius * scale))
 
     def handle_eraser_click(self, x, y):
         fx, fy = self.label_to_frame_coordinates(x, y)
@@ -402,8 +440,6 @@ class CustodianApp(QMainWindow):
         self.toggle_eraser()
         self.eraser_button.setEnabled(False)
         self.start_processing_thread(mode='preprocess')
-
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
