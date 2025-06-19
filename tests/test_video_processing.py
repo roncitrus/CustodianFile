@@ -106,7 +106,7 @@ def test_remove_boxes_at_removes_box():
     proc.preprocessed_frames = [frame1.copy()]
 
     original_count = sum(len(p) for p in proc.all_positions)
-    proc.remove_boxes_at(2, 2)
+    proc.remove_boxes_at(2, 2, radius=0)
     new_count = sum(len(p) for p in proc.all_positions)
     assert new_count == original_count - 1
 
@@ -120,6 +120,52 @@ def test_remove_boxes_at_updates_preview():
     proc.all_positions = [[(2, 2, 3, 3)]]
     proc.preprocessed_frames = [frame.copy()]
 
-    proc.remove_boxes_at(3, 3)
+    proc.remove_boxes_at(3, 3, radius=0)
     assert hasattr(proc, "preview_updated") and proc.preview_updated
+
+
+def test_remove_boxes_at_respects_radius():
+    frame = make_frame_with_rect((0, 0), (15, 15), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=object())
+    proc.frames = [frame]
+    proc.all_positions = [[(2, 2, 3, 3), (7, 2, 3, 3)]]
+    proc.preprocessed_frames = [frame.copy()]
+
+    proc.remove_boxes_at(5, 3, radius=5)
+    assert all(len(p) == 0 for p in proc.all_positions)
+    assert hasattr(proc, "preview_updated") and proc.preview_updated
+
+
+def test_preprocess_all_frames_can_cancel():
+    frame1 = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
+    frame2 = make_frame_with_rect((5, 2), (8, 5), size=(20, 20))
+    frame3 = make_frame_with_rect((8, 2), (11, 5), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=object())
+    proc.min_speed = 1
+    proc.max_size = 200
+    proc.frames = [frame1, frame2, frame3]
+
+    called = 0
+
+    def should_cancel():
+        nonlocal called
+        called += 1
+        return called > 1
+
+    proc.preprocess_all_frames(should_cancel=should_cancel)
+    assert len(proc.all_positions) == 1
+    assert hasattr(proc, "preview_updated")
+
+
+def test_process_with_squares_can_cancel():
+    frame1 = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
+    frame2 = make_frame_with_rect((5, 2), (8, 5), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=None)
+    proc.min_speed = 1
+    proc.max_size = 200
+    proc.frames = [frame1, frame2]
+    proc.preprocess_all_frames()
+
+    result = proc.process_with_squares(should_cancel=lambda: True)[0]
+    assert np.array_equal(result, frame1)
 
