@@ -18,7 +18,6 @@ class VideoProcessingThread(QThread):
         if self.mode == 'preprocess':
             result_image = self.processor.preprocess_all_frames()
         else:
-            self.processor.preprocess_all_frames()
             result_image = self.processor.process_with_squares(self.green_boxes, self.red_boxes)
 
         self.finished.emit(result_image)
