@@ -119,6 +119,10 @@ def test_remove_boxes_at_updates_preview():
     proc.frames = [frame, frame.copy()]
     proc.all_positions = [[(2, 2, 3, 3)]]
     proc.preprocessed_frames = [frame.copy()]
+    
+    proc.remove_boxes_at(3, 3, radius=0)
+    assert hasattr(proc, "preview_updated") and proc.preview_updated
+
 
     proc.remove_boxes_at(3, 3, radius=0)
     assert hasattr(proc, "preview_updated") and proc.preview_updated

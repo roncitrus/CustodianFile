@@ -421,9 +421,11 @@ class CustodianApp(QMainWindow):
 
     def cancel_processing(self):
         if self.thread and self.thread.isRunning():
+
             self.cancel_requested = True
             self.thread.requestInterruption()
             self.cancel_button.setEnabled(False)
+
 
     def on_processing_finished(self, result_images):
         if self.cancel_requested:
@@ -473,8 +475,6 @@ class CustodianApp(QMainWindow):
         self.toggle_eraser()
         self.eraser_button.setEnabled(False)
         self.start_processing_thread(mode='preprocess')
-
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

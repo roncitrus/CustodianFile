@@ -175,7 +175,7 @@ class VideoProcessor:
             self.create_background_subtractor()
             frame = self.frames[i].copy()
             prev_frame = self.frames[i-1].copy() if i > 0 else None
-
+            
             filtered_fast = self.detect_objects(frame, prev_frame)
             self.all_positions.append(filtered_fast)
             self.draw_boxes(frame_0, filtered_fast)
