@@ -438,8 +438,6 @@ class CustodianApp(QMainWindow):
         self.eraser_button.setEnabled(False)
         self.start_processing_thread(mode='preprocess')
 
-
-
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     ex = CustodianApp()
