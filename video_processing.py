@@ -207,13 +207,15 @@ class VideoProcessor:
             self.draw_boxes(frame, positions)
         return frame
 
-    def remove_boxes_at(self, x, y):
-        """Remove any bounding box containing the given coordinates."""
+    def remove_boxes_at(self, x, y, radius=0):
+        """Remove any bounding box intersecting the circle centred at (x, y)."""
         removed = False
         for positions in self.all_positions:
             for box in positions[:]:
                 bx, by, bw, bh = box
-                if bx <= x <= bx + bw and by <= y <= by + bh:
+                dx = max(bx - x, 0, x - (bx + bw))
+                dy = max(by - y, 0, y - (by + bh))
+                if dx * dx + dy * dy <= radius * radius:
                     positions.remove(box)
                     removed = True
 

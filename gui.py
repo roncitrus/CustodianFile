@@ -16,6 +16,8 @@ class EraserLabel(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_window = parent
+        self.setMouseTracking(True)
+        self._erasing = False
 
     def mousePressEvent(self, event):
         if (
@@ -23,10 +25,28 @@ class EraserLabel(QLabel):
             and getattr(self.parent_window, "eraser_mode", False)
             and event.button() == Qt.LeftButton
         ):
+            self._erasing = True
             self.parent_window.handle_eraser_click(event.pos().x(), event.pos().y())
             event.accept()
             return
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if (
+            self._erasing
+            and self.parent_window
+            and getattr(self.parent_window, "eraser_mode", False)
+            and (event.buttons() & Qt.LeftButton)
+        ):
+            self.parent_window.handle_eraser_click(event.pos().x(), event.pos().y())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._erasing = False
+        super().mouseReleaseEvent(event)
 
 class CustodianApp(QMainWindow):
     DEFAULT_PREVIEW_WIDTH = 720
@@ -56,6 +76,7 @@ class CustodianApp(QMainWindow):
         self.slider_timer.setSingleShot(True)
         self.slider_timer.timeout.connect(self.process_slider_change)
         self.eraser_mode = False
+        self.eraser_radius = 10
 
         self.initUI()
 
@@ -157,6 +178,16 @@ class CustodianApp(QMainWindow):
         #self.threshold_label.setFixedHeight(20)
         sliders_layout.addWidget(self.max_size_slider)
 
+        # Eraser radius label and slider
+        self.eraser_radius_label = QLabel(f'Eraser Radius: {self.eraser_radius}', self)
+        sliders_layout.addWidget(self.eraser_radius_label)
+        self.eraser_radius_slider = QSlider(Qt.Horizontal, self)
+        self.eraser_radius_slider.setMinimum(1)
+        self.eraser_radius_slider.setMaximum(100)
+        self.eraser_radius_slider.setValue(self.eraser_radius)
+        self.eraser_radius_slider.valueChanged.connect(self.update_eraser_radius)
+        sliders_layout.addWidget(self.eraser_radius_slider)
+
         # Add info text panel to display print statements
         self.info_text_panel = QTextEdit(self)
         self.info_text_panel.setReadOnly(True)  # Make it read-only
@@ -167,7 +198,7 @@ class CustodianApp(QMainWindow):
         self.progress_bar = QProgressBar(self)
         sliders_layout.addWidget(self.progress_bar)
 
-        sliders_container.setFixedHeight(250)
+        sliders_container.setFixedHeight(300)
         main_layout.addWidget(sliders_container)
 
         self.show()
@@ -265,6 +296,10 @@ class CustodianApp(QMainWindow):
             self.display_frame(self.current_frame_index)
             self.slider_timer.start(300)
 
+    def update_eraser_radius(self, value):
+        self.eraser_radius = value
+        self.eraser_radius_label.setText(f'Eraser Radius: {value}')
+
     def toggle_eraser(self):
         self.eraser_mode = self.eraser_button.isChecked()
         state = "On" if self.eraser_mode else "Off"
@@ -288,7 +323,7 @@ class CustodianApp(QMainWindow):
     def handle_eraser_click(self, x, y):
         fx, fy = self.label_to_frame_coordinates(x, y)
         if self.processor:
-            self.processor.remove_boxes_at(fx, fy)
+            self.processor.remove_boxes_at(fx, fy, self.eraser_radius)
 
     def process_slider_change(self):
         print("slider changed - preprocess_video called")

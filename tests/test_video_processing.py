@@ -106,7 +106,7 @@ def test_remove_boxes_at_removes_box():
     proc.preprocessed_frames = [frame1.copy()]
 
     original_count = sum(len(p) for p in proc.all_positions)
-    proc.remove_boxes_at(2, 2)
+    proc.remove_boxes_at(2, 2, radius=0)
     new_count = sum(len(p) for p in proc.all_positions)
     assert new_count == original_count - 1
 
@@ -120,6 +120,18 @@ def test_remove_boxes_at_updates_preview():
     proc.all_positions = [[(2, 2, 3, 3)]]
     proc.preprocessed_frames = [frame.copy()]
 
-    proc.remove_boxes_at(3, 3)
+    proc.remove_boxes_at(3, 3, radius=0)
+    assert hasattr(proc, "preview_updated") and proc.preview_updated
+
+
+def test_remove_boxes_at_respects_radius():
+    frame = make_frame_with_rect((0, 0), (15, 15), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=object())
+    proc.frames = [frame]
+    proc.all_positions = [[(2, 2, 3, 3), (7, 2, 3, 3)]]
+    proc.preprocessed_frames = [frame.copy()]
+
+    proc.remove_boxes_at(5, 3, radius=5)
+    assert all(len(p) == 0 for p in proc.all_positions)
     assert hasattr(proc, "preview_updated") and proc.preview_updated
 
