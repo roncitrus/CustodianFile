@@ -5,7 +5,7 @@ import cv2
 from Result import ResultWindow
 from PyQt5.QtWidgets import QSizePolicy, QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor
 import video_processing
 from video_thread import VideoProcessingThread
 
@@ -16,6 +16,9 @@ class EraserLabel(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent_window = parent
+        self.setMouseTracking(True)
+        self._erasing = False
+        self._cursor_pos = None
 
     def mousePressEvent(self, event):
         if (
@@ -23,17 +26,58 @@ class EraserLabel(QLabel):
             and getattr(self.parent_window, "eraser_mode", False)
             and event.button() == Qt.LeftButton
         ):
-            self.parent_window.handle_eraser_click(event.pos().x(), event.pos().y())
+            self._erasing = True
+            self._cursor_pos = event.pos()
+            self.parent_window.handle_eraser_click(self._cursor_pos.x(), self._cursor_pos.y())
+            self.update()
             event.accept()
             return
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.parent_window and getattr(self.parent_window, "eraser_mode", False):
+            self._cursor_pos = event.pos()
+            if self._erasing and (event.buttons() & Qt.LeftButton):
+                self.parent_window.handle_eraser_click(self._cursor_pos.x(), self._cursor_pos.y())
+                event.accept()
+                self.update()
+                return
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._erasing = False
+        self._cursor_pos = event.pos()
+        self.update()
+        super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event):
+        self._cursor_pos = None
+        self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if (
+            self.parent_window
+            and getattr(self.parent_window, "eraser_mode", False)
+            and self._cursor_pos is not None
+        ):
+            radius = self.parent_window.eraser_radius_in_label()
+            painter = QPainter(self)
+            pen = QPen(QColor(255, 0, 0))
+            pen.setWidth(1)
+            painter.setPen(pen)
+            painter.drawEllipse(self._cursor_pos, radius, radius)
+            painter.end()
 
 class CustodianApp(QMainWindow):
     DEFAULT_PREVIEW_WIDTH = 720
     DEFAULT_PREVIEW_HEIGHT = 405  # 16:9 aspect ratio
     def __init__(self):
         super().__init__()
-        self.threshold_value = 25
+        self.threshold_value = 110
         self.interpolate_button = None
         self.progress_bar = None
         self.result_window = None
@@ -56,6 +100,10 @@ class CustodianApp(QMainWindow):
         self.slider_timer.setSingleShot(True)
         self.slider_timer.timeout.connect(self.process_slider_change)
         self.eraser_mode = False
+        self.eraser_radius = 10
+        self.cancel_button = None
+        self.pending_thread_params = None
+        self.cancel_requested = False
 
         self.initUI()
 
@@ -108,6 +156,13 @@ class CustodianApp(QMainWindow):
         self.eraser_button.setEnabled(False)
         button_layout.addWidget(self.eraser_button)
 
+        # Cancel button
+        self.cancel_button = QPushButton('Cancel', self)
+        self.cancel_button.clicked.connect(self.cancel_processing)
+        self.cancel_button.setFixedHeight(40)
+        self.cancel_button.setEnabled(False)
+        button_layout.addWidget(self.cancel_button)
+
         button_layout.addStretch(1)
         button_and_preview_layout.addLayout(button_layout)
         main_layout.addLayout(button_and_preview_layout)
@@ -157,6 +212,16 @@ class CustodianApp(QMainWindow):
         #self.threshold_label.setFixedHeight(20)
         sliders_layout.addWidget(self.max_size_slider)
 
+        # Eraser radius label and slider
+        self.eraser_radius_label = QLabel(f'Eraser Radius: {self.eraser_radius}', self)
+        sliders_layout.addWidget(self.eraser_radius_label)
+        self.eraser_radius_slider = QSlider(Qt.Horizontal, self)
+        self.eraser_radius_slider.setMinimum(1)
+        self.eraser_radius_slider.setMaximum(100)
+        self.eraser_radius_slider.setValue(self.eraser_radius)
+        self.eraser_radius_slider.valueChanged.connect(self.update_eraser_radius)
+        sliders_layout.addWidget(self.eraser_radius_slider)
+
         # Add info text panel to display print statements
         self.info_text_panel = QTextEdit(self)
         self.info_text_panel.setReadOnly(True)  # Make it read-only
@@ -167,7 +232,7 @@ class CustodianApp(QMainWindow):
         self.progress_bar = QProgressBar(self)
         sliders_layout.addWidget(self.progress_bar)
 
-        sliders_container.setFixedHeight(250)
+        sliders_container.setFixedHeight(300)
         main_layout.addWidget(sliders_container)
 
         self.show()
@@ -201,6 +266,11 @@ class CustodianApp(QMainWindow):
         self.append_text(f"selected filename = {base_name}")
 
         try:
+            self.threshold_value = 110
+            self.threshold_slider.blockSignals(True)
+            self.threshold_slider.setValue(110)
+            self.threshold_slider.blockSignals(False)
+            self.threshold_label.setText(f'Threshold: {self.threshold_value}')
             self.processor = video_processing.VideoProcessor(self.video_path, self.threshold_value, self.video_preview_label)
             self.processor.load_video()
             self.frames = self.processor.frames
@@ -265,10 +335,16 @@ class CustodianApp(QMainWindow):
             self.display_frame(self.current_frame_index)
             self.slider_timer.start(300)
 
+    def update_eraser_radius(self, value):
+        self.eraser_radius = value
+        self.eraser_radius_label.setText(f'Eraser Radius: {value}')
+        self.video_preview_label.update()
+
     def toggle_eraser(self):
         self.eraser_mode = self.eraser_button.isChecked()
         state = "On" if self.eraser_mode else "Off"
         self.eraser_button.setText(f"Eraser: {state}")
+        self.video_preview_label.update()
 
     def label_to_frame_coordinates(self, x, y):
         if not self.processor or not self.processor.frames:
@@ -285,10 +361,19 @@ class CustodianApp(QMainWindow):
         frame_y = max(0, min(frame_h - 1, frame_y))
         return frame_x, frame_y
 
+    def eraser_radius_in_label(self):
+        if not self.processor or not self.processor.frames:
+            return self.eraser_radius
+        frame_h, frame_w = self.processor.frames[0].shape[:2]
+        label_w = self.video_preview_label.width()
+        label_h = self.video_preview_label.height()
+        scale = min(label_w / frame_w, label_h / frame_h)
+        return max(1, int(self.eraser_radius * scale))
+
     def handle_eraser_click(self, x, y):
         fx, fy = self.label_to_frame_coordinates(x, y)
         if self.processor:
-            self.processor.remove_boxes_at(fx, fy)
+            self.processor.remove_boxes_at(fx, fy, self.eraser_radius)
 
     def process_slider_change(self):
         print("slider changed - preprocess_video called")
@@ -318,17 +403,38 @@ class CustodianApp(QMainWindow):
 
     def start_processing_thread(self, mode='process', green_boxes=None, red_boxes=None):
         if self.thread is not None and self.thread.isRunning():
-            print("Previous process still running...")
+            print("Previous process still running... cancelling")
+            self.pending_thread_params = (mode, green_boxes, red_boxes)
+            self.cancel_processing()
             return
+
         print(f"Starting {mode} thread...")
+        self.progress_bar.setValue(0)
         self.thread = VideoProcessingThread(
-            self.processor, mode, green_boxes, red_boxes)  # pass in self.processor here
+            self.processor, mode, green_boxes, red_boxes)
         self.processor.progress_signal = self.thread.progress
         self.thread.progress.connect(self.progress_bar.setValue)
         self.thread.finished.connect(self.on_processing_finished)
+        self.thread.finished.connect(lambda: self.cancel_button.setEnabled(False))
+        self.cancel_button.setEnabled(True)
         self.thread.start()
 
+    def cancel_processing(self):
+        if self.thread and self.thread.isRunning():
+            self.cancel_requested = True
+            self.thread.requestInterruption()
+            self.cancel_button.setEnabled(False)
+
     def on_processing_finished(self, result_images):
+        if self.cancel_requested:
+            self.progress_bar.setValue(0)
+            self.cancel_requested = False
+            if self.pending_thread_params:
+                mode, green, red = self.pending_thread_params
+                self.pending_thread_params = None
+                self.start_processing_thread(mode, green, red)
+                return
+
         if self.thread.mode == 'preprocess':
             print("Preprocessing finished successfully.")
             self.frames = result_images
