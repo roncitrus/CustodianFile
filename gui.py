@@ -18,6 +18,7 @@ class EraserLabel(QLabel):
         self.parent_window = parent
         self.setMouseTracking(True)
         self._erasing = False
+
         self._cursor_pos = None
 
     def mousePressEvent(self, event):
@@ -27,6 +28,7 @@ class EraserLabel(QLabel):
             and event.button() == Qt.LeftButton
         ):
             self._erasing = True
+
             self._cursor_pos = event.pos()
             self.parent_window.handle_eraser_click(self._cursor_pos.x(), self._cursor_pos.y())
             self.update()
@@ -35,6 +37,7 @@ class EraserLabel(QLabel):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+
         if self.parent_window and getattr(self.parent_window, "eraser_mode", False):
             self._cursor_pos = event.pos()
             if self._erasing and (event.buttons() & Qt.LeftButton):
@@ -437,8 +440,6 @@ class CustodianApp(QMainWindow):
         self.toggle_eraser()
         self.eraser_button.setEnabled(False)
         self.start_processing_thread(mode='preprocess')
-
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
