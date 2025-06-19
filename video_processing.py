@@ -62,7 +62,7 @@ class VideoProcessor:
             return cv2.bitwise_and(frame[y:y + h, x:x + w], frame[y:y + h, x:x + w], mask=mask[:, :, None])
         return None
 
-    def process_with_squares(self, green_boxes=None, red_boxes=None):
+    def process_with_squares(self, green_boxes=None, red_boxes=None, should_cancel=None):
         """
         Processes all detected objects across frames and combines them into the final image.
         """
@@ -70,6 +70,8 @@ class VideoProcessor:
 
         # for each recorded frame's positions start from the second frame
         for i, frame_positions in enumerate(self.all_positions):
+            if should_cancel and should_cancel():
+                break
             current_frame = self.frames[i].copy()
             #temp_image = final_image.copy()
 
@@ -159,19 +161,21 @@ class VideoProcessor:
                 print(f"Drawing fast box at: x={x}, y={y}, w={w}, h={h}")
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-    def preprocess_all_frames(self):
+    def preprocess_all_frames(self, should_cancel=None):
         self.preprocessed_frames = []
         self.all_positions = []
         frame_count = len(self.frames)
         frame_0 = self.frames[0].copy()  # Start with the first frame
 
         for i in range(1, frame_count):
+            if should_cancel and should_cancel():
+                break
             if self.verbose:
                 print(f"Processing frame {i}/{frame_count}")
             self.create_background_subtractor()
             frame = self.frames[i].copy()
             prev_frame = self.frames[i-1].copy() if i > 0 else None
-
+            
             filtered_fast = self.detect_objects(frame, prev_frame)
             self.all_positions.append(filtered_fast)
             self.draw_boxes(frame_0, filtered_fast)

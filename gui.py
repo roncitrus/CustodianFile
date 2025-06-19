@@ -102,6 +102,9 @@ class CustodianApp(QMainWindow):
         self.eraser_mode = False
         self.eraser_radius = 10
 
+        self.cancel_button = None
+
+
         self.initUI()
 
     def initUI(self):
@@ -152,6 +155,13 @@ class CustodianApp(QMainWindow):
         self.eraser_button.setFixedHeight(40)
         self.eraser_button.setEnabled(False)
         button_layout.addWidget(self.eraser_button)
+
+        # Cancel button
+        self.cancel_button = QPushButton('Cancel', self)
+        self.cancel_button.clicked.connect(self.cancel_processing)
+        self.cancel_button.setFixedHeight(40)
+        self.cancel_button.setEnabled(False)
+        button_layout.addWidget(self.cancel_button)
 
         button_layout.addStretch(1)
         button_and_preview_layout.addLayout(button_layout)
@@ -396,7 +406,13 @@ class CustodianApp(QMainWindow):
         self.processor.progress_signal = self.thread.progress
         self.thread.progress.connect(self.progress_bar.setValue)
         self.thread.finished.connect(self.on_processing_finished)
+        self.thread.finished.connect(lambda: self.cancel_button.setEnabled(False))
+        self.cancel_button.setEnabled(True)
         self.thread.start()
+
+    def cancel_processing(self):
+        if self.thread and self.thread.isRunning():
+            self.thread.requestInterruption()
 
     def on_processing_finished(self, result_images):
         if self.thread.mode == 'preprocess':
