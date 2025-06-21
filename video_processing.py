@@ -170,6 +170,7 @@ class VideoProcessor:
         frame_count = len(self.frames)
         frame_0 = self.frames[0].copy()  # Start with the first frame
 
+        seen = []
         for i in range(1, frame_count):
             if should_cancel and should_cancel():
                 break
@@ -180,6 +181,8 @@ class VideoProcessor:
             prev_frame = self.frames[i-1].copy() if i > 0 else None
             
             filtered_fast = self.detect_objects(frame, prev_frame)
+            if self.ignore_overlaps:
+                filtered_fast = self.filter_against_seen(filtered_fast, seen)
             self.all_positions.append(filtered_fast)
             self.draw_boxes(frame_0, filtered_fast)
 
@@ -218,6 +221,15 @@ class VideoProcessor:
         for box in boxes:
             if not any(self.boxes_overlap(box, fb) for fb in filtered):
                 filtered.append(box)
+        return filtered
+
+    def filter_against_seen(self, boxes, seen):
+        """Filter out boxes overlapping any in ``seen`` and append uniques."""
+        filtered = []
+        for box in boxes:
+            if not any(self.boxes_overlap(box, s) for s in seen):
+                filtered.append(box)
+                seen.append(box)
         return filtered
     
     def draw_object_rectangles(self, frame, fast_positions, slow_positions):
