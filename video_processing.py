@@ -73,7 +73,9 @@ class VideoProcessor:
         for i, frame_positions in enumerate(self.all_positions):
             if should_cancel and should_cancel():
                 break
-            current_frame = self.frames[i].copy()
+            # ``self.all_positions`` stores detections starting from frame 1,
+            # so we need to fetch the corresponding source frame using ``i+1``.
+            current_frame = self.frames[i + 1].copy()
             #temp_image = final_image.copy()
 
             # Process all detected positions for this frame
@@ -84,7 +86,6 @@ class VideoProcessor:
                         final_image[y:y + h, x:x + w] = object_region
                 except Exception as e:
                     print(f"Error processing object at frame {i}, box ({x}, {y}, {w}, {h}): {e}")
-
         return [final_image]
 
 
