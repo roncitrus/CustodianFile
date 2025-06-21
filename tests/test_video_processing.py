@@ -59,6 +59,14 @@ def test_overlaps_with_slow_returns_true_when_overlap():
     assert proc.overlaps_with_slow(fast_box, slow_boxes)
 
 
+def test_filter_overlapping_boxes_removes_overlap():
+    proc = VideoProcessor(None, threshold_value=10, preview_label=None)
+    boxes = [(0, 0, 10, 10), (5, 5, 10, 10), (20, 20, 5, 5)]
+    filtered = proc.filter_overlapping_boxes(boxes)
+    assert len(filtered) == 2
+    assert (5, 5, 10, 10) not in filtered
+
+
 def test_process_with_squares_uses_correct_frame_indices():
     """Ensure object regions are copied from the correct frames."""
     frame1 = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
@@ -123,6 +131,17 @@ def test_remove_boxes_at_updates_preview():
     proc.remove_boxes_at(3, 3, radius=0)
     assert hasattr(proc, "preview_updated") and proc.preview_updated
 
+
+    proc.remove_boxes_at(3, 3, radius=0)
+    assert hasattr(proc, "preview_updated") and proc.preview_updated
+
+
+def test_remove_boxes_at_respects_radius():
+    frame = make_frame_with_rect((0, 0), (15, 15), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=object())
+    proc.frames = [frame]
+    proc.all_positions = [[(2, 2, 3, 3), (7, 2, 3, 3)]]
+    proc.preprocessed_frames = [frame.copy()]
 
     proc.remove_boxes_at(3, 3, radius=0)
     assert hasattr(proc, "preview_updated") and proc.preview_updated

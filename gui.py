@@ -3,7 +3,7 @@ import sys
 import cv2
 
 from Result import ResultWindow
-from PyQt5.QtWidgets import QSizePolicy, QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar
+from PyQt5.QtWidgets import QSizePolicy, QApplication, QMainWindow, QFileDialog, QLabel, QSlider, QPushButton, QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QProgressBar, QCheckBox
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor
 import video_processing
@@ -82,6 +82,7 @@ class CustodianApp(QMainWindow):
         self.progress_bar = None
         self.result_window = None
         self.processor = video_processing.VideoProcessor(None, self.threshold_value, None, None)
+        self.processor.ignore_overlaps = True
         self.frames = []
         self.current_frame_index = 0
         self.video_path = None
@@ -104,6 +105,7 @@ class CustodianApp(QMainWindow):
         self.cancel_button = None
         self.pending_thread_params = None
         self.cancel_requested = False
+        self.ignore_overlap_checkbox = None
 
         self.initUI()
 
@@ -212,6 +214,12 @@ class CustodianApp(QMainWindow):
         #self.threshold_label.setFixedHeight(20)
         sliders_layout.addWidget(self.max_size_slider)
 
+        # Ignore overlap toggle
+        self.ignore_overlap_checkbox = QCheckBox('Ignore Overlapping Boxes', self)
+        self.ignore_overlap_checkbox.setChecked(True)
+        self.ignore_overlap_checkbox.stateChanged.connect(self.update_ignore_overlaps)
+        sliders_layout.addWidget(self.ignore_overlap_checkbox)
+
         # Eraser radius label and slider
         self.eraser_radius_label = QLabel(f'Eraser Radius: {self.eraser_radius}', self)
         sliders_layout.addWidget(self.eraser_radius_label)
@@ -272,6 +280,7 @@ class CustodianApp(QMainWindow):
             self.threshold_slider.blockSignals(False)
             self.threshold_label.setText(f'Threshold: {self.threshold_value}')
             self.processor = video_processing.VideoProcessor(self.video_path, self.threshold_value, self.video_preview_label)
+            self.processor.ignore_overlaps = self.ignore_overlap_checkbox.isChecked()
             self.processor.load_video()
             self.frames = self.processor.frames
             if self.frames:
@@ -339,6 +348,10 @@ class CustodianApp(QMainWindow):
         self.eraser_radius = value
         self.eraser_radius_label.setText(f'Eraser Radius: {value}')
         self.video_preview_label.update()
+
+    def update_ignore_overlaps(self, state):
+        if self.processor:
+            self.processor.ignore_overlaps = state == Qt.Checked
 
     def toggle_eraser(self):
         self.eraser_mode = self.eraser_button.isChecked()
@@ -421,11 +434,9 @@ class CustodianApp(QMainWindow):
 
     def cancel_processing(self):
         if self.thread and self.thread.isRunning():
-
             self.cancel_requested = True
             self.thread.requestInterruption()
             self.cancel_button.setEnabled(False)
-
 
     def on_processing_finished(self, result_images):
         if self.cancel_requested:
