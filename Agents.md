@@ -1,0 +1,1 @@
+Always fetch and pull the Features branch before creating a branch and making changes.
