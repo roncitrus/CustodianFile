@@ -15,6 +15,15 @@ class DummyProcessor(VideoProcessor):
         self.preview_updated = True
 
 
+class PredefinedProcessor(DummyProcessor):
+    def __init__(self, boxes, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._boxes = list(boxes)
+
+    def detect_objects(self, frame, prev_frame):
+        return self._boxes.pop(0) if self._boxes else []
+
+
 def make_frame_with_rect(start, end, size=(100, 100)):
     frame = np.zeros((size[1], size[0], 3), dtype=np.uint8)
     cv2.rectangle(frame, start, end, (255, 255, 255), -1)
@@ -59,6 +68,23 @@ def test_overlaps_with_slow_returns_true_when_overlap():
     assert proc.overlaps_with_slow(fast_box, slow_boxes)
 
 
+def test_filter_overlapping_boxes_removes_overlap():
+    proc = VideoProcessor(None, threshold_value=10, preview_label=None)
+    boxes = [(0, 0, 10, 10), (5, 5, 10, 10), (20, 20, 5, 5)]
+    filtered = proc.filter_overlapping_boxes(boxes)
+    assert len(filtered) == 2
+    assert (5, 5, 10, 10) not in filtered
+
+
+def test_filter_against_seen_drops_previous_boxes():
+    proc = VideoProcessor(None, threshold_value=10, preview_label=None)
+    seen = []
+    first = proc.filter_against_seen([(0, 0, 5, 5)], seen)
+    second = proc.filter_against_seen([(0, 0, 5, 5), (10, 0, 5, 5)], seen)
+    assert first == [(0, 0, 5, 5)]
+    assert second == [(10, 0, 5, 5)]
+
+
 def test_process_with_squares_uses_correct_frame_indices():
     """Ensure object regions are copied from the correct frames."""
     frame1 = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
@@ -74,6 +100,16 @@ def test_process_with_squares_uses_correct_frame_indices():
 
     # The moving square from frame2 should appear at (5,2)-(8,5) in the result
     assert result_image[2:6, 5:9].sum() > 0
+
+
+def test_preprocess_filters_cross_frame_overlaps():
+    boxes = [[(0, 0, 5, 5)], [(0, 0, 5, 5), (10, 0, 5, 5)]]
+    proc = PredefinedProcessor(boxes, None, threshold_value=5, preview_label=object())
+    proc.frames = [np.zeros((10, 10, 3), dtype=np.uint8) for _ in range(3)]
+    proc.ignore_overlaps = True
+    proc.preprocess_all_frames()
+    assert proc.all_positions[0] == [(0, 0, 5, 5)]
+    assert proc.all_positions[1] == [(10, 0, 5, 5)]
 
 
 def test_load_video_valid_sample(tmp_path):
@@ -106,7 +142,7 @@ def test_remove_boxes_at_removes_box():
     proc.preprocessed_frames = [frame1.copy()]
 
     original_count = sum(len(p) for p in proc.all_positions)
-    proc.remove_boxes_at(2, 2)
+    proc.remove_boxes_at(2, 2, radius=0)
     new_count = sum(len(p) for p in proc.all_positions)
     assert new_count == original_count - 1
 
@@ -120,6 +156,52 @@ def test_remove_boxes_at_updates_preview():
     proc.all_positions = [[(2, 2, 3, 3)]]
     proc.preprocessed_frames = [frame.copy()]
 
-    proc.remove_boxes_at(3, 3)
+    proc.remove_boxes_at(3, 3, radius=0)
     assert hasattr(proc, "preview_updated") and proc.preview_updated
+
+
+def test_remove_boxes_at_respects_radius():
+    frame = make_frame_with_rect((0, 0), (15, 15), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=object())
+    proc.frames = [frame]
+    proc.all_positions = [[(2, 2, 3, 3), (7, 2, 3, 3)]]
+    proc.preprocessed_frames = [frame.copy()]
+
+    proc.remove_boxes_at(5, 3, radius=5)
+    assert all(len(p) == 0 for p in proc.all_positions)
+    assert hasattr(proc, "preview_updated") and proc.preview_updated
+
+
+def test_preprocess_all_frames_can_cancel():
+    frame1 = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
+    frame2 = make_frame_with_rect((5, 2), (8, 5), size=(20, 20))
+    frame3 = make_frame_with_rect((8, 2), (11, 5), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=object())
+    proc.min_speed = 1
+    proc.max_size = 200
+    proc.frames = [frame1, frame2, frame3]
+
+    called = 0
+
+    def should_cancel():
+        nonlocal called
+        called += 1
+        return called > 1
+
+    proc.preprocess_all_frames(should_cancel=should_cancel)
+    assert len(proc.all_positions) == 1
+    assert hasattr(proc, "preview_updated")
+
+
+def test_process_with_squares_can_cancel():
+    frame1 = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
+    frame2 = make_frame_with_rect((5, 2), (8, 5), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=None)
+    proc.min_speed = 1
+    proc.max_size = 200
+    proc.frames = [frame1, frame2]
+    proc.preprocess_all_frames()
+
+    result = proc.process_with_squares(should_cancel=lambda: True)[0]
+    assert np.array_equal(result, frame1)
 
