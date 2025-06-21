@@ -127,6 +127,21 @@ def test_remove_boxes_at_updates_preview():
     proc.frames = [frame, frame.copy()]
     proc.all_positions = [[(2, 2, 3, 3)]]
     proc.preprocessed_frames = [frame.copy()]
+    
+    proc.remove_boxes_at(3, 3, radius=0)
+    assert hasattr(proc, "preview_updated") and proc.preview_updated
+
+
+    proc.remove_boxes_at(3, 3, radius=0)
+    assert hasattr(proc, "preview_updated") and proc.preview_updated
+
+
+def test_remove_boxes_at_respects_radius():
+    frame = make_frame_with_rect((0, 0), (15, 15), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=object())
+    proc.frames = [frame]
+    proc.all_positions = [[(2, 2, 3, 3), (7, 2, 3, 3)]]
+    proc.preprocessed_frames = [frame.copy()]
 
     proc.remove_boxes_at(3, 3, radius=0)
     assert hasattr(proc, "preview_updated") and proc.preview_updated
