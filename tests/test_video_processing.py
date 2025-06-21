@@ -15,6 +15,15 @@ class DummyProcessor(VideoProcessor):
         self.preview_updated = True
 
 
+class PredefinedProcessor(DummyProcessor):
+    def __init__(self, boxes, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._boxes = list(boxes)
+
+    def detect_objects(self, frame, prev_frame):
+        return self._boxes.pop(0) if self._boxes else []
+
+
 def make_frame_with_rect(start, end, size=(100, 100)):
     frame = np.zeros((size[1], size[0], 3), dtype=np.uint8)
     cv2.rectangle(frame, start, end, (255, 255, 255), -1)
@@ -67,6 +76,15 @@ def test_filter_overlapping_boxes_removes_overlap():
     assert (5, 5, 10, 10) not in filtered
 
 
+def test_filter_against_seen_drops_previous_boxes():
+    proc = VideoProcessor(None, threshold_value=10, preview_label=None)
+    seen = []
+    first = proc.filter_against_seen([(0, 0, 5, 5)], seen)
+    second = proc.filter_against_seen([(0, 0, 5, 5), (10, 0, 5, 5)], seen)
+    assert first == [(0, 0, 5, 5)]
+    assert second == [(10, 0, 5, 5)]
+
+
 def test_process_with_squares_uses_correct_frame_indices():
     """Ensure object regions are copied from the correct frames."""
     frame1 = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
@@ -82,6 +100,16 @@ def test_process_with_squares_uses_correct_frame_indices():
 
     # The moving square from frame2 should appear at (5,2)-(8,5) in the result
     assert result_image[2:6, 5:9].sum() > 0
+
+
+def test_preprocess_filters_cross_frame_overlaps():
+    boxes = [[(0, 0, 5, 5)], [(0, 0, 5, 5), (10, 0, 5, 5)]]
+    proc = PredefinedProcessor(boxes, None, threshold_value=5, preview_label=object())
+    proc.frames = [np.zeros((10, 10, 3), dtype=np.uint8) for _ in range(3)]
+    proc.ignore_overlaps = True
+    proc.preprocess_all_frames()
+    assert proc.all_positions[0] == [(0, 0, 5, 5)]
+    assert proc.all_positions[1] == [(10, 0, 5, 5)]
 
 
 def test_load_video_valid_sample(tmp_path):

@@ -170,6 +170,7 @@ class VideoProcessor:
         frame_count = len(self.frames)
         frame_0 = self.frames[0].copy()  # Start with the first frame
 
+        seen = []
         for i in range(1, frame_count):
             if should_cancel and should_cancel():
                 break
@@ -178,6 +179,17 @@ class VideoProcessor:
             self.create_background_subtractor()
             frame = self.frames[i].copy()
             prev_frame = self.frames[i-1].copy() if i > 0 else None
+            if self.ignore_overlaps:
+                filtered_fast = self.filter_against_seen(filtered_fast, seen)
+
+    def filter_against_seen(self, boxes, seen):
+        """Filter out boxes overlapping any in ``seen`` and append uniques."""
+        filtered = []
+        for box in boxes:
+            if not any(self.boxes_overlap(box, s) for s in seen):
+                filtered.append(box)
+                seen.append(box)
+        return filtered
             
             filtered_fast = self.detect_objects(frame, prev_frame)
             self.all_positions.append(filtered_fast)
