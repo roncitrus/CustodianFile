@@ -15,10 +15,10 @@ class VideoProcessingThread(QThread):
         self.red_boxes = red_boxes
 
     def run(self):
+        cancel = self.isInterruptionRequested
         if self.mode == 'preprocess':
-            result_image = self.processor.preprocess_all_frames()
+            result_image = self.processor.preprocess_all_frames(should_cancel=cancel)
         else:
-            self.processor.preprocess_all_frames()
-            result_image = self.processor.process_with_squares(self.green_boxes, self.red_boxes)
+            result_image = self.processor.process_with_squares(self.green_boxes, self.red_boxes, should_cancel=cancel)
 
         self.finished.emit(result_image)
