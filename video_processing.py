@@ -16,6 +16,7 @@ class VideoProcessor:
         self.frames = []
         self.min_speed = 750
         self.max_size = 150
+        self.ignore_overlaps = True
         self.object_positions = []
         self.all_positions = []
         self.fgbg = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=threshold_value, detectShadows=False)
@@ -150,6 +151,8 @@ class VideoProcessor:
         fast_positions, _, _ = self.detect_fast_objects(frame, prev_frame)
 
         filtered_fast = fast_positions
+        if self.ignore_overlaps:
+            filtered_fast = self.filter_overlapping_boxes(filtered_fast)
         if self.verbose:
             print(f"Filtered fast objects: {len(filtered_fast)}")
         return filtered_fast
@@ -203,6 +206,19 @@ class VideoProcessor:
                 y1 < y2 + h2 and y1 + h1 > y2):
                 return True
         return False
+
+    def boxes_overlap(self, a, b):
+        ax, ay, aw, ah = a
+        bx, by, bw, bh = b
+        return not (ax + aw <= bx or bx + bw <= ax or ay + ah <= by or by + bh <= ay)
+
+    def filter_overlapping_boxes(self, boxes):
+        """Remove boxes that overlap another earlier box."""
+        filtered = []
+        for box in boxes:
+            if not any(self.boxes_overlap(box, fb) for fb in filtered):
+                filtered.append(box)
+        return filtered
     
     def draw_object_rectangles(self, frame, fast_positions, slow_positions):
         result_image = frame.copy()
