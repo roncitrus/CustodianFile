@@ -86,7 +86,6 @@ class VideoProcessor:
                         final_image[y:y + h, x:x + w] = object_region
                 except Exception as e:
                     print(f"Error processing object at frame {i}, box ({x}, {y}, {w}, {h}): {e}")
-
         return [final_image]
 
 
@@ -181,7 +180,7 @@ class VideoProcessor:
             self.create_background_subtractor()
             frame = self.frames[i].copy()
             prev_frame = self.frames[i-1].copy() if i > 0 else None
-
+            
             filtered_fast = self.detect_objects(frame, prev_frame)
             if self.ignore_overlaps:
                 filtered_fast = self.filter_against_seen(filtered_fast, seen)

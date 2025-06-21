@@ -14,6 +14,13 @@ class DummyProcessor(VideoProcessor):
         # Mark that the function was called without invoking Qt
         self.preview_updated = True
 
+class PredefinedProcessor(DummyProcessor):
+    def __init__(self, boxes, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._boxes = list(boxes)
+
+    def detect_objects(self, frame, prev_frame):
+        return self._boxes.pop(0) if self._boxes else []
 
 class PredefinedProcessor(DummyProcessor):
     def __init__(self, boxes, *args, **kwargs):
@@ -29,14 +36,12 @@ def make_frame_with_rect(start, end, size=(100, 100)):
     cv2.rectangle(frame, start, end, (255, 255, 255), -1)
     return frame
 
-
 def test_extract_object_region_returns_region():
     frame = make_frame_with_rect((10, 10), (19, 19))
     proc = VideoProcessor(None, threshold_value=10, preview_label=None)
     region = proc.extract_object_region(frame, 10, 10, 10, 10)
     assert region is not None
     assert region.shape[0] == 10 and region.shape[1] == 10
-
 
 def test_detect_fast_objects_identifies_movement():
     prev_frame = make_frame_with_rect((10, 10), (19, 19))
@@ -47,7 +52,6 @@ def test_detect_fast_objects_identifies_movement():
     proc.prev_fast_positions = [(15, 15)]
     boxes, _, _ = proc.detect_fast_objects(curr_frame, prev_frame)
     assert boxes, "No fast-moving objects detected"
-
 
 def test_preprocess_all_frames_updates_preview_and_returns_frame():
     frame1 = make_frame_with_rect((2, 2), (5, 5), size=(20, 20))
@@ -61,13 +65,26 @@ def test_preprocess_all_frames_updates_preview_and_returns_frame():
     assert hasattr(proc, "preview_updated")
     assert isinstance(result, list) and result
 
-
 def test_overlaps_with_slow_returns_true_when_overlap():
     proc = VideoProcessor(None, threshold_value=10, preview_label=None)
     fast_box = (10, 10, 10, 10)
     slow_boxes = [(15, 15, 10, 10)]
     assert proc.overlaps_with_slow(fast_box, slow_boxes)
 
+def test_filter_overlapping_boxes_removes_overlap():
+    proc = VideoProcessor(None, threshold_value=10, preview_label=None)
+    boxes = [(0, 0, 10, 10), (5, 5, 10, 10), (20, 20, 5, 5)]
+    filtered = proc.filter_overlapping_boxes(boxes)
+    assert len(filtered) == 2
+    assert (5, 5, 10, 10) not in filtered
+
+def test_filter_against_seen_drops_previous_boxes():
+    proc = VideoProcessor(None, threshold_value=10, preview_label=None)
+    seen = []
+    first = proc.filter_against_seen([(0, 0, 5, 5)], seen)
+    second = proc.filter_against_seen([(0, 0, 5, 5), (10, 0, 5, 5)], seen)
+    assert first == [(0, 0, 5, 5)]
+    assert second == [(10, 0, 5, 5)]
 
 def test_filter_overlapping_boxes_removes_overlap():
     proc = VideoProcessor(None, threshold_value=10, preview_label=None)
@@ -112,24 +129,37 @@ def test_preprocess_filters_cross_frame_overlaps():
     proc.preprocess_all_frames()
     assert proc.all_positions[0] == [(0, 0, 5, 5)]
     assert proc.all_positions[1] == [(10, 0, 5, 5)]
+    proc.frames = [frame1, frame2]
+    
+    # Preprocess to populate all_positions
+    proc.preprocess_all_frames()
+    result_image = proc.process_with_squares()[0]
+    # The moving square from frame2 should appear at (5,2)-(8,5) in the result
+    assert result_image[2:6, 5:9].sum() > 0
+
+
+def test_preprocess_filters_cross_frame_overlaps():
+    boxes = [[(0, 0, 5, 5)], [(0, 0, 5, 5), (10, 0, 5, 5)]]
+    proc = PredefinedProcessor(boxes, None, threshold_value=5, preview_label=object())
+    proc.frames = [np.zeros((10, 10, 3), dtype=np.uint8) for _ in range(3)]
+    proc.ignore_overlaps = True
+    proc.preprocess_all_frames()
+    assert proc.all_positions[0] == [(0, 0, 5, 5)]
+    assert proc.all_positions[1] == [(10, 0, 5, 5)]
 
 
 def test_load_video_valid_sample(tmp_path):
     """VideoProcessor.load_video should read frames from a small temporary video."""
     video_file = tmp_path / "temp.mp4"
-
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(str(video_file), fourcc, 1, (8, 8))
     for i in range(3):
         frame = np.full((8, 8, 3), i, dtype=np.uint8)
         writer.write(frame)
     writer.release()
-
     proc = VideoProcessor(str(video_file), threshold_value=5, preview_label=None)
     proc.load_video()
-
     assert len(proc.frames) == 3
-
     video_file.unlink()
 
 
@@ -157,7 +187,16 @@ def test_remove_boxes_at_updates_preview():
     proc.frames = [frame, frame.copy()]
     proc.all_positions = [[(2, 2, 3, 3)]]
     proc.preprocessed_frames = [frame.copy()]
+    proc.remove_boxes_at(3, 3, radius=0)
+    assert hasattr(proc, "preview_updated") and proc.preview_updated
 
+
+def test_remove_boxes_at_respects_radius():
+    frame = make_frame_with_rect((0, 0), (15, 15), size=(20, 20))
+    proc = DummyProcessor(None, threshold_value=5, preview_label=object())
+    proc.frames = [frame]
+    proc.all_positions = [[(2, 2, 3, 3), (7, 2, 3, 3)]]
+    proc.preprocessed_frames = [frame.copy()]
     proc.remove_boxes_at(3, 3, radius=0)
     assert hasattr(proc, "preview_updated") and proc.preview_updated
 

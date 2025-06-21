@@ -144,7 +144,7 @@ class CustodianApp(QMainWindow):
         button_layout.addWidget(self.preprocess_button)
 
         # Process button
-        self.process_button = QPushButton('Process', self)
+        self.process_button = QPushButton('Generate Image', self)
         self.process_button.clicked.connect(self.start_processing)
         self.process_button.setFixedHeight(40)
         self.process_button.setEnabled(False)  # Disable initially
@@ -486,8 +486,6 @@ class CustodianApp(QMainWindow):
         self.toggle_eraser()
         self.eraser_button.setEnabled(False)
         self.start_processing_thread(mode='preprocess')
-
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
